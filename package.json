@@ -1,0 +1,17 @@
+{
+  "name": "sheetweaver-webapp",
+  "version": "2.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "verify:local": "node scripts/local-verify.js",
+    "test": "npm run verify:local"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "type": "commonjs",
+  "devDependencies": {
+    "@google/clasp": "^3.3.0"
+  }
+}

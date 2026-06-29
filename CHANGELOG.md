@@ -1,0 +1,57 @@
+# Changelog
+
+All notable changes to this project are documented here. The format is based on
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [2.0.0] - 2026-06-28
+
+First public release. Prior versions were private testing builds, so there is no earlier public
+history to diff against.
+
+### Added
+- **Copy Debug button** in the app header (all views) — produces a labelled, copy-to-clipboard
+  diagnostic block (`=== Sheet Weaver Debug ===`) with app version, user email, per-connection run
+  status, and recent client error report IDs, for fast tester→admin handoff.
+- **Client-side error capture** — `window.onerror` / `unhandledrejection` and all
+  `withFailureHandler` rejections are buffered and routed through `logClientError`, so browser-side
+  failures land in Admin Diagnostics with a server report ID.
+- **`getDebugSnapshot()`** — non-admin, caller-scoped diagnostics (own connections + trigger state
+  only; never exposes other users' data).
+- **In-app status system** — themed toasts and a confirmation modal replace every native
+  `alert()` / `confirm()`.
+- **Dashboard last-sync indicator** — `Last synced … ago · counts` / `Paused` /
+  `Waiting for first 15-min sync` / `Never`.
+- **Search feedback** — live filtering with result count, clear button, and a "no matching captures"
+  empty state.
+- **Step progress indicator** for the setup wizard, and a preview expand/collapse with full-value
+  tooltips for live examples.
+- **HTML email handling** — the capture pipeline detects HTML-only bodies, strips them to plain
+  text, logs a warning, and records the detected body type (`lastBodyType`) per run.
+- `CHANGELOG.md` (this file).
+
+### Changed
+- **Dashboard table** — visible, predictable sorting (active-column highlight + `aria-sort`);
+  Edit/Pause/Repair/Delete converted from spans to real focusable `<button>`s with accessible labels;
+  row-level loading state instead of replacing the whole table body.
+- **Inline validation** before save/verify — field-level messages and focus on the first invalid
+  input.
+- **Responsive layout** — `@media (max-width:720px)` rules for small screens (scrollable table,
+  stacked controls, compact header grid).
+- **Accessibility** — modals carry `role="dialog"` / `aria-modal` / `aria-labelledby`, Escape-to-close,
+  and a focus trap; initial focus lands on Cancel.
+- **Update-check hardening** — `checkForUpdates` now writes a short-TTL backoff before fetching so a
+  flaky GitHub endpoint cannot trigger repeated live requests.
+- Documentation refreshed across README, ARCHITECTURE, setup-guide, troubleshooting, qa-runbook,
+  SUPPORT, CONTRIBUTING, and SECURITY to cover Copy Debug, diagnostics, and the access model.
+
+### Fixed
+- Robust plain-text extraction from complex/HTML email formats (previously could mis-extract from
+  HTML-only messages).
+- Corrected the package license metadata to MIT (matches `LICENSE`).
+
+### Security
+- `getDebugSnapshot()` is caller-scoped — no cross-user data exposure.
+- DOM updates use `textContent` (no template-literal injection in modal content).
+
+[2.0.0]: https://github.com/DaftVino/SheetWeaver-Webapp/releases/tag/v2.0.0

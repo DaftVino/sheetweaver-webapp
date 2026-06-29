@@ -1,0 +1,68 @@
+name: Deploy to Apps Script
+
+# IMPORTANT: This workflow is project-specific and requires your own credentials.
+#
+# Auto-deploy-on-push is intentionally disabled. Each installer has their own
+# Apps Script project (scriptId) and must configure their own credentials.
+# Running this workflow from a fork WITHOUT providing your own SCRIPT_ID and
+# CLASPRC_JSON secret would fail immediately — it does not use any committed
+# scriptId.
+#
+# To enable for YOUR project:
+#   1. Add CLASPRC_JSON as a GitHub Actions secret (Settings → Secrets → Actions)
+#      with the contents of YOUR ~/.clasprc.json (run `clasp login` locally to generate).
+#   2. When triggering this workflow manually, supply YOUR scriptId in the
+#      required 'script_id' input — the workflow generates .clasp.json at runtime.
+#   3. Trigger this workflow manually from the Actions tab.
+#
+# Trigger: manual only (workflow_dispatch). No push trigger.
+
+on:
+  workflow_dispatch:
+    inputs:
+      script_id:
+        description: 'Your Apps Script project ID (required — found in Apps Script > Project Settings)'
+        required: true
+      description:
+        description: 'Deployment description (shown in Apps Script versions list)'
+        required: false
+        default: 'Manual deploy from GitHub Actions'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate .clasp.json
+        # Build .clasp.json from the example file, substituting the supplied scriptId.
+        # Fails fast if script_id is empty so clasp push never silently targets a wrong project.
+        run: |
+          SCRIPT_ID="${{ github.event.inputs.script_id }}"
+          if [ -z "$SCRIPT_ID" ]; then
+            echo "ERROR: script_id input is required." >&2
+            exit 1
+          fi
+          sed "s/YOUR_SCRIPT_ID_HERE/$SCRIPT_ID/" .clasp.json.example > .clasp.json
+
+      - name: Authenticate clasp
+        # CLASPRC_JSON must be set as a GitHub Actions secret.
+        # Generate it by running `clasp login` locally, then copying
+        # the contents of ~/.clasprc.json into the secret.
+        run: echo '${{ secrets.CLASPRC_JSON }}' > ~/.clasprc.json
+
+      - name: Push to Apps Script
+        run: npx clasp push --force
+
+      - name: Create new deployment version
+        run: npx clasp deploy --description "${{ github.event.inputs.description }} (SHA ${{ github.sha }})"
