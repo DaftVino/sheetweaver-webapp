@@ -1007,16 +1007,174 @@
         }
       }
 
+      function _makeActionBtn(label, extraClass, ariaLabel, handler) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'action-btn' + (extraClass ? ' ' + extraClass : '');
+        btn.textContent = label;
+        btn.setAttribute('aria-label', ariaLabel);
+        btn.addEventListener('click', handler);
+        return btn;
+      }
+
+      function _renderSyncBanner(hasTrigger, hasOwnedConnections) {
+        const bannerContainer = document.getElementById('syncBannerContainer');
+        if (hasTrigger) {
+          bannerContainer.innerHTML = `<div class="sync-banner active"><span><strong>✅ Auto-Sync is Active:</strong> Your emails are being captured automatically every 15 minutes.</span></div>`;
+        } else if (hasOwnedConnections) {
+          bannerContainer.innerHTML = `
+            <div class="sync-banner">
+              <span><strong>⚠️ Auto-Sync is Off:</strong> You must enable sync for your background processing to work.</span>
+              <button onclick="enableSync(this)" class="success-btn" style="padding: var(--space-2) var(--space-3); font-size: var(--font-sm);">Enable 15-Min Auto-Sync</button>
+            </div>
+          `;
+        } else {
+          bannerContainer.innerHTML = '';
+        }
+      }
+
+      function _buildConnectionRow(conn) {
+        const tr = document.createElement('tr');
+        const hasAlert = conn.isOwner && (!conn.gmailActive || !conn.sheetActive || conn.accessDenied);
+        if (conn.isPaused) tr.className = 'paused-row';
+        else if (hasAlert) tr.className = 'alert-row';
+
+        const tdEmail = document.createElement('td');
+        tdEmail.dataset.label = 'Creator';
+        tdEmail.textContent = conn.userEmail;
+        tr.appendChild(tdEmail);
+
+        const tdLabel = document.createElement('td');
+        tdLabel.dataset.label = 'Gmail Label';
+        tdLabel.style.fontFamily = 'monospace';
+        tdLabel.style.background = 'transparent';
+        tdLabel.textContent = conn.gmailLabel;
+        tr.appendChild(tdLabel);
+
+        const tdTab = document.createElement('td');
+        tdTab.dataset.label = 'Sheet Tab';
+        tdTab.style.fontWeight = 'bold';
+        if (conn.accessDenied) {
+          const s = document.createElement('span');
+          s.style.color = 'var(--text-muted)';
+          s.style.fontStyle = 'italic';
+          s.title = 'You do not have access to view this sheet';
+          s.textContent = 'Sheet not shared with user';
+          tdTab.appendChild(s);
+        } else if (!conn.sheetActive) {
+          const s = document.createElement('span');
+          s.style.color = 'var(--danger)';
+          s.style.textDecoration = 'line-through';
+          s.title = 'Tab missing from spreadsheet';
+          s.textContent = conn.tabName;
+          tdTab.appendChild(s);
+        } else {
+          const a = document.createElement('a');
+          a.href = conn.spreadsheetUrl + '#gid=' + (conn.sheetId || '');
+          a.target = '_blank';
+          a.style.color = 'var(--primary)';
+          a.style.textDecoration = 'none';
+          a.textContent = conn.tabName + ' ↗';
+          tdTab.appendChild(a);
+        }
+        tr.appendChild(tdTab);
+
+        const tdGmail = document.createElement('td');
+        tdGmail.className = 'status-cell';
+        tdGmail.dataset.label = 'Gmail';
+        if (!conn.isOwner) {
+          tdGmail.innerHTML = statusIcon('users', '', { text: 'Team', style: 'color: var(--text-muted);' });
+          tdGmail.querySelector('span').title = 'Managed by ' + conn.userEmail;
+        } else {
+          tdGmail.innerHTML = conn.gmailActive
+            ? statusIcon('link', 'Connected')
+            : statusIcon('unlink', 'Broken Connection - Label missing in Gmail', { style: 'color: var(--danger);' });
+        }
+        tr.appendChild(tdGmail);
+
+        const tdSheet = document.createElement('td');
+        tdSheet.className = 'status-cell';
+        tdSheet.dataset.label = 'Sheet';
+        if (!conn.isOwner) {
+          if (conn.accessDenied) {
+            tdSheet.innerHTML = statusIcon('lock', 'Sheet not shared with user', { text: 'No Access', style: 'color: var(--text-muted);' });
+          } else if (!conn.sheetActive) {
+            tdSheet.innerHTML = statusIcon('unlink', 'Broken Connection - Spreadsheet tab missing', { text: 'Broken', style: 'color: var(--danger);' });
+          } else {
+            tdSheet.innerHTML = statusIcon('users', '', { text: 'Team', style: 'color: var(--text-muted);' });
+            tdSheet.querySelector('span').title = 'Managed by ' + conn.userEmail;
+          }
+        } else {
+          if (conn.accessDenied) {
+            tdSheet.innerHTML = statusIcon('lock', 'Private Sheet - You do not have access to view it, but the sync is active');
+          } else if (!conn.sheetActive) {
+            tdSheet.innerHTML = statusIcon('unlink', 'Broken Connection - Spreadsheet tab missing', { style: 'color: var(--danger);' });
+          } else {
+            tdSheet.innerHTML = statusIcon('link', 'Connected');
+          }
+        }
+        tr.appendChild(tdSheet);
+
+        const lastSyncTd = document.createElement('td');
+        lastSyncTd.dataset.label = 'Last Sync';
+        lastSyncTd.className = 'last-sync-cell';
+        lastSyncTd.style.fontSize = 'var(--font-xs)';
+        lastSyncTd.style.color = 'var(--text-muted)';
+        if (conn.isPaused) {
+          lastSyncTd.textContent = 'Paused';
+        } else if (conn.lastSyncTime) {
+          const minsAgo = Math.round((Date.now() - conn.lastSyncTime * 1000) / 60000);
+          const timeStr = minsAgo < 60 ? minsAgo + 'm ago' : Math.round(minsAgo / 60) + 'h ago';
+          const c = conn.lastCounts;
+          const countsStr = c ? (c.new + ' new' + (c.updated > 0 ? ', ' + c.updated + ' upd' : '')) : '';
+          const badge = conn.lastRunStatus === 'error' ? ' ⚠' : conn.lastRunStatus === 'partial' ? ' ⏸' : '';
+          lastSyncTd.textContent = timeStr + (countsStr ? ' · ' + countsStr : '') + badge;
+          if (conn.lastRunStatus === 'error') {
+            lastSyncTd.style.color = 'var(--danger)';
+            lastSyncTd.title = conn.lastError || 'Error during sync';
+          } else if (conn.lastRunStatus === 'partial') {
+            lastSyncTd.style.color = 'var(--warning-text)';
+          }
+        } else if (conn.lastRunAt) {
+          lastSyncTd.textContent = 'Waiting for first 15-min sync';
+        } else {
+          lastSyncTd.textContent = 'Never';
+        }
+        tr.appendChild(lastSyncTd);
+
+        const tdActions = document.createElement('td');
+        const pauseLabel = conn.isPaused ? 'Resume' : 'Pause';
+        if (!conn.isOwner) {
+          tdActions.appendChild(_makeActionBtn(pauseLabel, '', pauseLabel + ' ' + conn.tabName, function() { togglePause(conn.tabName, conn.spreadsheetUrl, tr); }));
+          tdActions.appendChild(_makeActionBtn('Delete', 'danger', 'Delete ' + conn.tabName, function() { deleteConn(conn.tabName, conn.spreadsheetUrl); }));
+        } else if (conn.accessDenied) {
+          tdActions.appendChild(_makeActionBtn(pauseLabel, '', pauseLabel + ' ' + conn.tabName, function() { togglePause(conn.tabName, conn.spreadsheetUrl, tr); }));
+          tdActions.appendChild(_makeActionBtn('Delete', 'danger', 'Delete ' + conn.tabName, function() { deleteConn(conn.tabName, conn.spreadsheetUrl); }));
+        } else if (!conn.sheetActive) {
+          const repBtn = _makeActionBtn('Repair', '', 'Repair ' + conn.tabName, function() { repairConn(conn.tabName, conn.spreadsheetUrl, tr); });
+          repBtn.style.color = 'var(--warning-text)';
+          tdActions.appendChild(repBtn);
+          tdActions.appendChild(_makeActionBtn('Delete', 'danger', 'Delete ' + conn.tabName, function() { deleteConn(conn.tabName, conn.spreadsheetUrl); }));
+        } else {
+          tdActions.appendChild(_makeActionBtn('Edit', '', 'Edit ' + conn.tabName, function() { editConn(conn.tabName, conn.spreadsheetUrl, tr); }));
+          tdActions.appendChild(_makeActionBtn(pauseLabel, '', pauseLabel + ' ' + conn.tabName, function() { togglePause(conn.tabName, conn.spreadsheetUrl, tr); }));
+          tdActions.appendChild(_makeActionBtn('Delete', 'danger', 'Delete ' + conn.tabName, function() { deleteConn(conn.tabName, conn.spreadsheetUrl); }));
+        }
+        tr.appendChild(tdActions);
+
+        return tr;
+      }
+
       function loadDashboard() {
         nextStep(0);
         _showSkeletonRows();
-        document.getElementById('dashboardSearch').value = "";
+        document.getElementById('dashboardSearch').value = '';
         refreshAdminDiagnostics();
-        
+
         google.script.run
           .withFailureHandler(function(error) {
             const tbody = document.getElementById('dashboardBody');
-            tbody.innerHTML = ''; // clear safely; no untrusted interpolation
+            tbody.innerHTML = '';
             const tr = document.createElement('tr');
             const td = document.createElement('td');
             td.colSpan = 7;
@@ -1032,28 +1190,12 @@
           })
           .withSuccessHandler(function(data) {
             document.getElementById('activeEmail').innerText = data.activeEmail;
-            
-            // NEW: Check if the current user actually owns any active captures
-            let hasOwnedConnections = data.connections.some(c => c.isOwner && !c.isPaused);
-            
-            const bannerContainer = document.getElementById('syncBannerContainer');
-            if (data.hasTrigger) {
-              bannerContainer.innerHTML = `<div class="sync-banner active"><span><strong>✅ Auto-Sync is Active:</strong> Your emails are being captured automatically every 15 minutes.</span></div>`;
-            } else if (hasOwnedConnections) {
-              // Only bug them to enable sync if they actually created a capture!
-              bannerContainer.innerHTML = `
-                <div class="sync-banner">
-                  <span><strong>⚠️ Auto-Sync is Off:</strong> You must enable sync for your background processing to work.</span>
-                  <button onclick="enableSync(this)" class="success-btn" style="padding: var(--space-2) var(--space-3); font-size: var(--font-sm);">Enable 15-Min Auto-Sync</button>
-                </div>
-              `;
-            } else {
-              bannerContainer.innerHTML = ''; // Hide completely for empty/observing users
-            }
+            const hasOwnedConnections = data.connections.some(c => c.isOwner && !c.isPaused);
+            _renderSyncBanner(data.hasTrigger, hasOwnedConnections);
 
             const tbody = document.getElementById('dashboardBody');
             tbody.innerHTML = '';
-            
+
             if (data.connections.length === 0) {
               const emptyTr = document.createElement('tr');
               const emptyTd = document.createElement('td');
@@ -1067,171 +1209,14 @@
               return;
             }
 
-            // Smart Sort: Puts "My Connections" at the top, followed by team connections.
             data.connections.sort((a, b) => {
               if (a.isOwner !== b.isOwner) return a.isOwner ? -1 : 1;
-              let aNeedsAttention = (a.isOwner && (!a.gmailActive || !a.sheetActive || a.accessDenied)) ? 1 : 0;
-              let bNeedsAttention = (b.isOwner && (!b.gmailActive || !b.sheetActive || b.accessDenied)) ? 1 : 0;
-              return bNeedsAttention - aNeedsAttention; 
+              const aNeedsAttention = (a.isOwner && (!a.gmailActive || !a.sheetActive || a.accessDenied)) ? 1 : 0;
+              const bNeedsAttention = (b.isOwner && (!b.gmailActive || !b.sheetActive || b.accessDenied)) ? 1 : 0;
+              return bNeedsAttention - aNeedsAttention;
             });
 
-            data.connections.forEach(conn => {
-              const tr = document.createElement('tr');
-
-              const hasAlert = conn.isOwner && (!conn.gmailActive || !conn.sheetActive || conn.accessDenied);
-              if (conn.isPaused) {
-                tr.className = 'paused-row';
-              } else if (hasAlert) {
-                tr.className = 'alert-row';
-              }
-
-              // Col 1: userEmail — textContent only (no innerHTML interpolation)
-              const tdEmail = document.createElement('td');
-              tdEmail.dataset.label = 'Creator';
-              tdEmail.textContent = conn.userEmail;
-              tr.appendChild(tdEmail);
-
-              // Col 2: gmailLabel — textContent only
-              const tdLabel = document.createElement('td');
-              tdLabel.dataset.label = 'Gmail Label';
-              tdLabel.style.fontFamily = 'monospace';
-              tdLabel.style.background = 'transparent';
-              tdLabel.textContent = conn.gmailLabel;
-              tr.appendChild(tdLabel);
-
-              // Col 3: tab link
-              const tdTab = document.createElement('td');
-              tdTab.dataset.label = 'Sheet Tab';
-              tdTab.style.fontWeight = 'bold';
-              if (conn.accessDenied) {
-                const s = document.createElement('span');
-                s.style.color = 'var(--text-muted)';
-                s.style.fontStyle = 'italic';
-                s.title = 'You do not have access to view this sheet';
-                s.textContent = 'Sheet not shared with user';
-                tdTab.appendChild(s);
-              } else if (!conn.sheetActive) {
-                const s = document.createElement('span');
-                s.style.color = 'var(--danger)';
-                s.style.textDecoration = 'line-through';
-                s.title = 'Tab missing from spreadsheet';
-                s.textContent = conn.tabName;
-                tdTab.appendChild(s);
-              } else {
-                const a = document.createElement('a');
-                a.href = conn.spreadsheetUrl + '#gid=' + (conn.sheetId || '');
-                a.target = '_blank';
-                a.style.color = 'var(--primary)';
-                a.style.textDecoration = 'none';
-                a.textContent = conn.tabName + ' ↗';
-                tdTab.appendChild(a);
-              }
-              tr.appendChild(tdTab);
-
-              // Col 4: Gmail status icon — safe static HTML except title which uses .title property
-              const tdGmail = document.createElement('td');
-              tdGmail.className = 'status-cell';
-              tdGmail.dataset.label = 'Gmail';
-              if (!conn.isOwner) {
-                // userEmail set via .title property (never interpolated into innerHTML)
-                tdGmail.innerHTML = statusIcon('users', '', { text: 'Team', style: 'color: var(--text-muted);' });
-                tdGmail.querySelector('span').title = 'Managed by ' + conn.userEmail;
-              } else {
-                tdGmail.innerHTML = conn.gmailActive
-                  ? statusIcon('link', 'Connected')
-                  : statusIcon('unlink', 'Broken Connection - Label missing in Gmail', { style: 'color: var(--danger);' });
-              }
-              tr.appendChild(tdGmail);
-
-              // Col 5: Sheet status icon
-              const tdSheet = document.createElement('td');
-              tdSheet.className = 'status-cell';
-              tdSheet.dataset.label = 'Sheet';
-              if (!conn.isOwner) {
-                if (conn.accessDenied) {
-                  tdSheet.innerHTML = statusIcon('lock', 'Sheet not shared with user', { text: 'No Access', style: 'color: var(--text-muted);' });
-                } else if (!conn.sheetActive) {
-                  tdSheet.innerHTML = statusIcon('unlink', 'Broken Connection - Spreadsheet tab missing', { text: 'Broken', style: 'color: var(--danger);' });
-                } else {
-                  // userEmail set via .title property (never interpolated into innerHTML)
-                  tdSheet.innerHTML = statusIcon('users', '', { text: 'Team', style: 'color: var(--text-muted);' });
-                  tdSheet.querySelector('span').title = 'Managed by ' + conn.userEmail;
-                }
-              } else {
-                if (conn.accessDenied) {
-                  tdSheet.innerHTML = statusIcon('lock', 'Private Sheet - You do not have access to view it, but the sync is active');
-                } else if (!conn.sheetActive) {
-                  tdSheet.innerHTML = statusIcon('unlink', 'Broken Connection - Spreadsheet tab missing', { style: 'color: var(--danger);' });
-                } else {
-                  tdSheet.innerHTML = statusIcon('link', 'Connected');
-                }
-              }
-              tr.appendChild(tdSheet);
-
-              // Col 6: Last sync (populated below after appending to tr)
-              const lastSyncTd = document.createElement('td');
-              lastSyncTd.dataset.label = 'Last Sync';
-              lastSyncTd.className = 'last-sync-cell';
-              lastSyncTd.style.fontSize = 'var(--font-xs)';
-              lastSyncTd.style.color = 'var(--text-muted)';
-              tr.appendChild(lastSyncTd);
-
-              // Col 7: Actions — real <button> elements; closures capture tabName/url/tr
-              const tdActions = document.createElement('td');
-              function makeActionBtn(label, extraClass, ariaLabel, handler) {
-                const btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = 'action-btn' + (extraClass ? ' ' + extraClass : '');
-                btn.textContent = label;
-                btn.setAttribute('aria-label', ariaLabel);
-                btn.addEventListener('click', handler);
-                return btn;
-              }
-              const pauseLabel = conn.isPaused ? 'Resume' : 'Pause';
-              if (!conn.isOwner) {
-                tdActions.appendChild(makeActionBtn(pauseLabel, '', pauseLabel + ' ' + conn.tabName, function() { togglePause(conn.tabName, conn.spreadsheetUrl, tr); }));
-                tdActions.appendChild(makeActionBtn('Delete', 'danger', 'Delete ' + conn.tabName, function() { deleteConn(conn.tabName, conn.spreadsheetUrl); }));
-              } else if (conn.accessDenied) {
-                tdActions.appendChild(makeActionBtn(pauseLabel, '', pauseLabel + ' ' + conn.tabName, function() { togglePause(conn.tabName, conn.spreadsheetUrl, tr); }));
-                tdActions.appendChild(makeActionBtn('Delete', 'danger', 'Delete ' + conn.tabName, function() { deleteConn(conn.tabName, conn.spreadsheetUrl); }));
-              } else if (!conn.sheetActive) {
-                const repBtn = makeActionBtn('Repair', '', 'Repair ' + conn.tabName, function() { repairConn(conn.tabName, conn.spreadsheetUrl, tr); });
-                repBtn.style.color = 'var(--warning-text)';
-                tdActions.appendChild(repBtn);
-                tdActions.appendChild(makeActionBtn('Delete', 'danger', 'Delete ' + conn.tabName, function() { deleteConn(conn.tabName, conn.spreadsheetUrl); }));
-              } else {
-                tdActions.appendChild(makeActionBtn('Edit', '', 'Edit ' + conn.tabName, function() { editConn(conn.tabName, conn.spreadsheetUrl, tr); }));
-                tdActions.appendChild(makeActionBtn(pauseLabel, '', pauseLabel + ' ' + conn.tabName, function() { togglePause(conn.tabName, conn.spreadsheetUrl, tr); }));
-                tdActions.appendChild(makeActionBtn('Delete', 'danger', 'Delete ' + conn.tabName, function() { deleteConn(conn.tabName, conn.spreadsheetUrl); }));
-              }
-              tr.appendChild(tdActions);
-
-              // Populate last-sync cell using lastSyncTime (first full sync) + lastRunAt counts
-              if (conn.isPaused) {
-                lastSyncTd.textContent = 'Paused';
-                lastSyncTd.style.color = 'var(--text-muted)';
-              } else if (conn.lastSyncTime) {
-                const minsAgo = Math.round((Date.now() - conn.lastSyncTime * 1000) / 60000);
-                const timeStr = minsAgo < 60 ? minsAgo + 'm ago' : Math.round(minsAgo / 60) + 'h ago';
-                const c = conn.lastCounts;
-                const countsStr = c ? (c.new + ' new' + (c.updated > 0 ? ', ' + c.updated + ' upd' : '')) : '';
-                const badge = conn.lastRunStatus === 'error' ? ' ⚠' : conn.lastRunStatus === 'partial' ? ' ⏸' : '';
-                lastSyncTd.textContent = timeStr + (countsStr ? ' · ' + countsStr : '') + badge;
-                if (conn.lastRunStatus === 'error') {
-                  lastSyncTd.style.color = 'var(--danger)';
-                  lastSyncTd.title = conn.lastError || 'Error during sync';
-                } else if (conn.lastRunStatus === 'partial') {
-                  lastSyncTd.style.color = 'var(--warning-text)';
-                }
-              } else if (conn.lastRunAt) {
-                lastSyncTd.textContent = 'Waiting for first 15-min sync';
-                lastSyncTd.style.color = 'var(--text-muted)';
-              } else {
-                lastSyncTd.textContent = 'Never';
-              }
-
-              tbody.appendChild(tr);
-            });
+            data.connections.forEach(conn => tbody.appendChild(_buildConnectionRow(conn)));
           }).getDashboardData();
       }
       
