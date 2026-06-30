@@ -2,7 +2,7 @@
 
 ## Overview
 
-Gmail Tracker Sheet Webapp is a Google Apps Script web app. There is no traditional server — Google's infrastructure hosts and runs all code. The "backend" is a set of server-side functions in `Code.js` exposed to the browser via `google.script.run`. The "frontend" is a single HTML file (`Index.html`) served by `HtmlService`.
+SheetWeaver is a Google Apps Script web app. There is no traditional server — Google's infrastructure hosts and runs all code. The "backend" is a set of server-side functions in `Code.js` exposed to the browser via `google.script.run`. The "frontend" is a single HTML file (`Index.html`) served by `HtmlService`.
 
 ```
 Browser

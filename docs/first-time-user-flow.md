@@ -1,88 +1,116 @@
 # First-Time User Guide
 
-SheetWeaver automatically copies emails from a Gmail label into a Google Spreadsheet on a schedule you control. When a matching email arrives in your inbox and gets that label, SheetWeaver extracts the sender, subject, date, and body into a new row — no manual copy-paste required.
+SheetWeaver copies emails from a Gmail label into a Google Sheet for you. When a
+new email gets that label, SheetWeaver reads it and adds a new row to your sheet.
+It saves the sender, subject, date, and any fields you pick. You never have to
+copy and paste.
 
-This guide covers what you need to do as a standard user who has received a link to a deployed SheetWeaver app. It does not cover deployment or admin setup — see [setup-guide.md](setup-guide.md) for that.
+This guide is for regular users who got a link to a SheetWeaver app. It does not
+cover deploying or admin setup. For that, see [setup-guide.md](setup-guide.md).
 
 ---
 
-## First login: granting permissions
+## First login: allowing permissions
 
-When you open the app for the first time, Google will ask you to authorize it. SheetWeaver requests access to:
+The first time you open the app, Google asks you to allow it. SheetWeaver needs
+these permissions:
 
 | Permission | Why it's needed |
 |---|---|
-| Read Gmail labels and messages | To find emails matching the label you configure |
-| Read and write Google Sheets | To append rows to your spreadsheet |
-| Run as you | So the sync trigger can run on your behalf, on a schedule |
+| Read your Gmail labels and messages | To find the emails that match your label |
+| Read and write Google Sheets | To add rows to your sheet |
+| Run as you | So the sync can run for you on a schedule |
 
-Click **Allow** for all permissions. SheetWeaver does not store your email content — it only reads messages to extract fields you configure, then writes them to your spreadsheet.
+Click **Allow** for each one. SheetWeaver does not save your emails. It only reads
+them to pull out the fields you choose, then writes those fields to your sheet.
 
 ---
 
 ## The setup wizard
 
-After granting permissions you land on the dashboard. If you have no captures yet, click **+ Add a new capture** to open the wizard.
+After you allow the permissions, you land on the dashboard. If you have no
+captures yet, click **+ Add a new capture** to open the wizard.
 
 ### Step 1 — Enter a Gmail label name
 
-Type the exact name of the Gmail label you want to track. The name must match what appears in Gmail's left sidebar (case-sensitive). Click **Verify & Scan Label** to confirm the label exists and count existing messages.
+Type the exact name of the Gmail label you want to track. It must match the name
+in Gmail's left sidebar, including capital letters. Click **Verify & Scan Label**.
+The app checks that the label exists and reads a few emails to suggest fields.
 
 ### Step 2 — Configure spreadsheet data
 
-Paste the URL of the Google Spreadsheet where rows should be written. Enter the sheet (tab) name. Choose which email fields to capture (sender, subject, date, body snippet, etc.). Preview the output format before saving.
+This screen is called **Configure Spreadsheet Data**. Here you:
+
+- Paste the link to your Google Sheet.
+- Set a **Custom Tab Name** if you want one. Leave it blank to use the label name.
+- Pick **First Sync Fetch** — how many old emails to grab on the first run:
+  **Last 50 Emails**, **Last 30 Days**, or **All (Max 1000)**.
+- Choose which fields to capture and check the preview.
 
 ### Step 3 — Save
 
-Review your configuration and click **Save**. SheetWeaver creates a sync trigger that runs automatically every hour.
+Look over your setup and click **Save**. SheetWeaver creates a sync that runs on
+its own every 15 minutes. You see a **Success!** message when it is done.
 
 ---
 
-## Setting up your first Gmail label capture
+## Making your first Gmail label
 
-If you do not have a Gmail label yet:
+Don't have a label yet? Make one first:
 
 1. In Gmail, open an email you want to track.
-2. Click the label icon (or More → Label as) and create a new label — for example `receipts` or `support-tickets`.
-3. Apply that label to the email.
-4. Return to SheetWeaver and enter that label name in Step 1 of the wizard.
+2. Click the label icon (or **More → Label as**) and make a new label. For
+   example, `receipts` or `support-tickets`.
+3. Add that label to the email.
+4. Go back to SheetWeaver and type that label name in Step 1.
 
 ---
 
 ## What the dashboard shows
 
-| Column | Meaning |
-|---|---|
-| Label | The Gmail label being tracked |
-| Sheet | The spreadsheet tab receiving new rows |
-| Last Run | When SheetWeaver last synced this capture |
-| Status | `ok` = last sync succeeded; `error` = something went wrong |
-| Emails Synced | Cumulative count of emails written to the sheet |
-| Actions | Pause, edit, or delete this capture |
+The dashboard lists your captures under **Active Connections**:
 
-A sync trigger runs all your captures automatically. The **Sync Now** button at the top of the dashboard runs an immediate sync if you want to catch up without waiting.
+| Column | What it means |
+|---|---|
+| Creator Email | The account that owns this capture |
+| Gmail Label | The Gmail label being tracked |
+| Spreadsheet Tab | The sheet tab where new rows are added |
+| Gmail Status | Whether the app can read the label |
+| Sheet Status | Whether the app can write to the tab |
+| Last Sync | When the last sync ran |
+| Actions | Edit, pause, delete, or repair this capture |
+
+The sync runs all your captures on its own every 15 minutes.
 
 ---
 
-## What the trigger does and how to know it's working
+## How to know the sync is working
 
-SheetWeaver installs a time-driven trigger (under your Google account) that fires every hour. You can verify it is active:
+SheetWeaver sets up a trigger under your Google account that runs every 15
+minutes. You can check that it is on:
 
-- A green **"Syncing hourly"** banner appears at the top of the dashboard when the trigger is installed.
-- In Google Apps Script: open your copy of the script → Triggers (clock icon) → you should see a `processEmails` trigger owned by your email.
+- A green **"✅ Auto-Sync is Active"** banner shows at the top of the dashboard
+  when the trigger is on.
+- In Google Apps Script: open your copy of the script, click **Triggers** (the
+  clock icon), and look for a `processEmails` trigger owned by your email.
 
-If the banner shows **"Sync trigger off"**, click **Enable hourly sync** to reinstall it.
+If the banner says **"⚠️ Auto-Sync is Off"**, click **Enable 15-Min Auto-Sync** to
+turn it back on.
 
 ---
 
 ## When something goes wrong
 
-1. Check the **Status** column on the dashboard — `error` rows show what failed.
-2. Click **Copy Debug** in the top-right corner. This copies a snapshot of your configuration and recent errors.
-3. Open a [GitHub Issue](https://github.com/DaftVino/SheetWeaver-Webapp/issues/new/choose) and paste the copied text.
-4. Describe what you were doing when the error occurred.
+1. Look at the **Gmail Status** and **Sheet Status** columns. They show which part
+   failed.
+2. Click **Copy Debug** in the top-right corner. This copies your setup and recent
+   errors.
+3. Open a [GitHub Issue](https://github.com/DaftVino/SheetWeaver-Webapp/issues/new/choose)
+   and paste in the copied text.
+4. Say what you were doing when the error happened.
 
-For common problems (label not found, spreadsheet access denied, trigger quota exceeded) see [troubleshooting.md](troubleshooting.md).
+For common problems (label not found, no sheet access, trigger limits), see
+[troubleshooting.md](troubleshooting.md).
 
 ---
 

@@ -1,6 +1,6 @@
 # Setup Guide
 
-Step-by-step instructions for deploying Gmail Tracker Sheet Webapp for the first time.
+Step-by-step instructions for deploying SheetWeaver for the first time.
 
 There are three install paths:
 
@@ -54,7 +54,7 @@ Use this path if you are installing the app for the first time and do not alread
 
 ```powershell
 git clone <repo-url>
-cd "Gmail Tracker Sheet Webapp"
+cd SheetWeaver-Webapp
 npm install
 ```
 
@@ -62,7 +62,7 @@ npm install
 
 ```bash
 git clone <repo-url>
-cd "Gmail Tracker Sheet Webapp"
+cd SheetWeaver-Webapp
 npm install
 ```
 
@@ -77,7 +77,7 @@ This opens a browser window. Sign in with the Google account that will own this 
 ### 3. Create a new Apps Script project
 
 ```powershell
-clasp create --type webapp --title "Gmail Tracker Sheet Webapp"
+clasp create --type webapp --title "SheetWeaver"
 ```
 
 clasp writes a `.clasp.json` file with a new `scriptId`. This file is gitignored — do not commit it.
@@ -221,7 +221,7 @@ Select `bootstrapAdmin` from the function dropdown and click **Run**. Authorize 
 When a user opens the web app for the first time:
 
 1. They see the Dashboard. If no trigger is active, a yellow banner appears — but the trigger is typically enabled automatically during setup.
-2. They click **New Connection**, enter a Gmail label name, and follow the wizard.
+2. They click **+ Add a new capture**, enter a Gmail label name, and follow the wizard.
 3. After saving, the app registers the connection and enables the user's 15-minute sync trigger automatically.
 4. If trigger auto-enable fails (rare), a prompt appears to enable it via the dashboard banner.
 5. Within ~15 minutes, matching emails are processed and data appears in the configured Sheet.
