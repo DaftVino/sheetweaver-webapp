@@ -292,7 +292,7 @@
       a { color: var(--primary); }
       code { color: var(--text-main); }
 
-      .account-banner { background: var(--primary-soft); color: var(--primary-soft-text); padding: var(--space-2) var(--space-4); border-radius: var(--radius-pill); font-size: var(--font-sm); font-weight: bold; white-space: nowrap; }
+      .account-banner { background: var(--primary-soft); color: var(--primary-soft-text); padding: var(--space-2) var(--space-4); border-radius: var(--radius-pill); font-size: var(--font-sm); font-weight: bold; white-space: nowrap; max-width: min(100%, 280px); overflow: hidden; text-overflow: ellipsis; }
       .account-tip { font-size: var(--font-xs); color: var(--text-muted); margin-bottom: var(--space-5); font-style: italic; }
       .dashboard-title-row { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4); flex-wrap: wrap; }
       .dashboard-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; justify-content: flex-end; }
@@ -482,11 +482,15 @@
       .admin-diag-table td { word-break: break-all; max-width: 300px; }
 
       /* Status toast */
-      #statusToast { position: fixed; bottom: var(--space-6); left: 50%; transform: translateX(-50%); z-index: 11000; min-width: 240px; max-width: 480px; padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); font-size: var(--font-sm); font-weight: 500; box-shadow: var(--shadow-lg); pointer-events: none; opacity: 0; transition: opacity 200ms ease; text-align: center; }
-      #statusToast.visible { opacity: 1; pointer-events: auto; }
+      #statusToast { position: fixed; bottom: max(var(--space-6), env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%) translateY(10px); z-index: 11000; min-width: 240px; max-width: min(480px, calc(100vw - var(--space-8))); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); font-size: var(--font-sm); font-weight: 500; box-shadow: var(--shadow-lg); pointer-events: none; opacity: 0; transition: opacity 220ms ease, transform 220ms ease; display: flex; align-items: center; gap: var(--space-2); }
+      #statusToast.visible { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
       #statusToast.toast-success { background: var(--success-bg); color: var(--success-text); border: 1px solid var(--success-border); }
       #statusToast.toast-error   { background: var(--danger-bg); color: var(--danger); border: 1px solid var(--danger); }
       #statusToast.toast-info    { background: var(--primary-soft); color: var(--primary-soft-text); border: 1px solid var(--border); }
+      .toast-icon { flex-shrink: 0; font-style: normal; font-size: 15px; line-height: 1; }
+      .toast-msg { flex: 1; text-align: left; }
+      .toast-close { flex-shrink: 0; background: none; border: none; padding: 2px var(--space-1); margin: 0; cursor: pointer; color: currentColor; opacity: 0.55; font-size: 18px; line-height: 1; min-height: 0; font-weight: 400; border-radius: var(--radius-sm); }
+      .toast-close:hover { opacity: 1; background: rgba(0,0,0,0.08); }
       /* Confirm modal */
       #confirmModal .modal-content { max-width: 440px; }
       #confirmModal .modal-title { margin: 0 0 var(--space-3); font-size: var(--font-base); color: var(--text-main); }
@@ -517,6 +521,16 @@
       .preview-toggle-btn:hover { text-decoration: underline; }
       .email-preview.expanded { max-height: none; }
 
+      /* Skeleton shimmer */
+      @keyframes shimmer {
+        0% { background-position: -600px 0; }
+        100% { background-position: 600px 0; }
+      }
+      .skeleton-cell { display: inline-block; width: 100%; height: 13px; border-radius: var(--radius-sm); background: linear-gradient(90deg, var(--bg-subtle) 25%, var(--bg-subtle-hover) 50%, var(--bg-subtle) 75%); background-size: 1200px 100%; animation: shimmer 1.6s infinite; vertical-align: middle; }
+      .skeleton-cell.w-sm { width: 55%; }
+      .skeleton-cell.w-md { width: 78%; }
+      .skeleton-row td { padding-top: 15px; padding-bottom: 15px; }
+
       /* Responsive small-screen */
       @media (max-width: 720px) {
         .container { padding: var(--space-2); }
@@ -530,6 +544,26 @@
         .search-row { flex-wrap: wrap; }
         .search-input-wrap { max-width: 100% !important; }
         .dashboard-actions { flex-wrap: wrap; }
+        .sync-banner { flex-direction: column; align-items: stretch; text-align: center; top: 4px; padding: var(--space-3); }
+        .sync-banner button { align-self: center; width: 100%; max-width: 280px; }
+      }
+
+      /* Phone card layout for dashboard table (< 600px) */
+      @media (max-width: 599px) {
+        .dashboard-table { display: block; overflow-x: visible; }
+        .dashboard-table thead { display: none; }
+        .dashboard-table tbody { display: flex; flex-direction: column; gap: var(--space-3); }
+        .dashboard-table tbody tr { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2) var(--space-4); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-card); box-shadow: var(--shadow-sm); }
+        .dashboard-table tbody tr.alert-row { border-color: var(--danger); border-left: 4px solid var(--danger); background: var(--danger-bg); }
+        .dashboard-table tbody tr.paused-row { border-color: var(--secondary); border-left: 4px solid var(--secondary); }
+        .dashboard-table td { display: flex; flex-direction: column; padding: 0; border: none !important; font-size: var(--font-sm); overflow-wrap: break-word; word-break: break-word; }
+        .dashboard-table td::before { content: attr(data-label); font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; font-family: 'Plus Jakarta Sans', system-ui, Arial, sans-serif; margin-bottom: 3px; }
+        .dashboard-table td:last-child { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; gap: var(--space-1); align-items: center; margin-top: var(--space-1); padding-top: var(--space-2); border-top: 1px solid var(--border) !important; }
+        .dashboard-table td:last-child::before { display: none; }
+        .dashboard-table td[colspan] { grid-column: 1 / -1; padding: var(--space-5) 0; text-align: center; }
+        .dashboard-table td[colspan]::before { display: none; }
+        .status-cell { text-align: left; }
+        .skeleton-row { background: var(--bg-card) !important; }
       }
     </style>
   </head>
@@ -796,9 +830,30 @@
         const el = document.getElementById('statusToast');
         if (!el) return;
         clearTimeout(_toastTimer);
-        el.textContent = msg;
+        while (el.firstChild) el.removeChild(el.firstChild);
+
+        const iconEl = document.createElement('span');
+        iconEl.className = 'toast-icon';
+        iconEl.setAttribute('aria-hidden', 'true');
+        iconEl.textContent = type === 'success' ? '✓' : type === 'error' ? '✕' : 'ℹ';
+        el.appendChild(iconEl);
+
+        const msgEl = document.createElement('span');
+        msgEl.className = 'toast-msg';
+        msgEl.textContent = msg;
+        el.appendChild(msgEl);
+
+        if (type === 'error') {
+          const closeBtn = document.createElement('button');
+          closeBtn.className = 'toast-close';
+          closeBtn.setAttribute('aria-label', 'Dismiss');
+          closeBtn.textContent = '×';
+          closeBtn.onclick = function() { el.className = ''; clearTimeout(_toastTimer); };
+          el.appendChild(closeBtn);
+        }
+
         el.className = 'visible toast-' + (type || 'info');
-        _toastTimer = setTimeout(function() { el.className = ''; }, type === 'error' ? 5000 : 3000);
+        _toastTimer = setTimeout(function() { el.className = ''; }, type === 'error' ? 6000 : 3000);
       }
 
       // --- Confirm modal ---
@@ -925,11 +980,36 @@
       }
 
       // ==========================================
-      // DASHBOARD LOGIC 
+      // DASHBOARD LOGIC
       // ==========================================
+      function _showSkeletonRows() {
+        const tbody = document.getElementById('dashboardBody');
+        tbody.innerHTML = '';
+        var cols = [
+          { label: 'Creator', w: 'w-md' }, { label: 'Gmail Label', w: 'w-sm' },
+          { label: 'Sheet Tab', w: 'w-md' }, { label: 'Gmail', w: 'w-sm' },
+          { label: 'Sheet', w: 'w-sm' }, { label: 'Last Sync', w: 'w-sm' }, { label: '', w: '' }
+        ];
+        for (var i = 0; i < 4; i++) {
+          var tr = document.createElement('tr');
+          tr.className = 'skeleton-row';
+          cols.forEach(function(col) {
+            var td = document.createElement('td');
+            if (col.label) td.dataset.label = col.label;
+            if (col.w) {
+              var cell = document.createElement('span');
+              cell.className = 'skeleton-cell ' + col.w;
+              td.appendChild(cell);
+            }
+            tr.appendChild(td);
+          });
+          tbody.appendChild(tr);
+        }
+      }
+
       function loadDashboard() {
         nextStep(0);
-        document.getElementById('dashboardBody').innerHTML = '<tr><td colspan="7" style="text-align: center; padding: var(--space-8);">Scanning registries and verifying connections...</td></tr>';
+        _showSkeletonRows();
         document.getElementById('dashboardSearch').value = "";
         refreshAdminDiagnostics();
         
@@ -975,7 +1055,15 @@
             tbody.innerHTML = '';
             
             if (data.connections.length === 0) {
-              tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: var(--space-8);">No captures configured yet. Click "+ Add a new capture" to begin!</td></tr>';
+              const emptyTr = document.createElement('tr');
+              const emptyTd = document.createElement('td');
+              emptyTd.colSpan = 7;
+              emptyTd.style.cssText = 'text-align: center; padding: var(--space-8) var(--space-4);';
+              emptyTd.innerHTML = '<div style="font-size: 2rem; margin-bottom: var(--space-3); line-height:1;" aria-hidden="true">📭</div>' +
+                '<div style="font-weight: 600; color: var(--text-main); margin-bottom: var(--space-2);">No captures yet</div>' +
+                '<div style="color: var(--text-muted); font-size: var(--font-sm); margin-bottom: var(--space-4);">Click "+ Add a new capture" to start tracking emails into your spreadsheet.</div>';
+              emptyTr.appendChild(emptyTd);
+              tbody.appendChild(emptyTr);
               return;
             }
 
@@ -999,11 +1087,13 @@
 
               // Col 1: userEmail — textContent only (no innerHTML interpolation)
               const tdEmail = document.createElement('td');
+              tdEmail.dataset.label = 'Creator';
               tdEmail.textContent = conn.userEmail;
               tr.appendChild(tdEmail);
 
               // Col 2: gmailLabel — textContent only
               const tdLabel = document.createElement('td');
+              tdLabel.dataset.label = 'Gmail Label';
               tdLabel.style.fontFamily = 'monospace';
               tdLabel.style.background = 'transparent';
               tdLabel.textContent = conn.gmailLabel;
@@ -1011,6 +1101,7 @@
 
               // Col 3: tab link
               const tdTab = document.createElement('td');
+              tdTab.dataset.label = 'Sheet Tab';
               tdTab.style.fontWeight = 'bold';
               if (conn.accessDenied) {
                 const s = document.createElement('span');
@@ -1040,6 +1131,7 @@
               // Col 4: Gmail status icon — safe static HTML except title which uses .title property
               const tdGmail = document.createElement('td');
               tdGmail.className = 'status-cell';
+              tdGmail.dataset.label = 'Gmail';
               if (!conn.isOwner) {
                 // userEmail set via .title property (never interpolated into innerHTML)
                 tdGmail.innerHTML = statusIcon('users', '', { text: 'Team', style: 'color: var(--text-muted);' });
@@ -1054,6 +1146,7 @@
               // Col 5: Sheet status icon
               const tdSheet = document.createElement('td');
               tdSheet.className = 'status-cell';
+              tdSheet.dataset.label = 'Sheet';
               if (!conn.isOwner) {
                 if (conn.accessDenied) {
                   tdSheet.innerHTML = statusIcon('lock', 'Sheet not shared with user', { text: 'No Access', style: 'color: var(--text-muted);' });
@@ -1077,6 +1170,7 @@
 
               // Col 6: Last sync (populated below after appending to tr)
               const lastSyncTd = document.createElement('td');
+              lastSyncTd.dataset.label = 'Last Sync';
               lastSyncTd.className = 'last-sync-cell';
               lastSyncTd.style.fontSize = 'var(--font-xs)';
               lastSyncTd.style.color = 'var(--text-muted)';
@@ -1324,7 +1418,7 @@
         const tabToDelete = pendingDeleteTab;
         const urlToDelete = pendingDeleteUrl;
         closeDeleteModal();
-        document.getElementById('dashboardBody').innerHTML = '<tr><td colspan="7" style="text-align: center; padding: var(--space-8);">Deleting configuration...</td></tr>';
+        _showSkeletonRows();
         
         // HTML-B: helper for safe error rendering — no innerHTML interpolation
         function renderDeleteError(prefix, msg) {
