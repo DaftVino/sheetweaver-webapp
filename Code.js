@@ -36,7 +36,6 @@ function getActiveEmail() {
 // ADMIN & DIAGNOSTICS
 // ==========================================
 const ADMIN_EMAIL_KEY = 'admin_email';
-const ADMIN_EMAILS = [];
 const DIAG_INDEX_KEY = 'diag_index';
 const DIAG_MAX = 50;
 
@@ -46,16 +45,12 @@ const VERSION_ENDPOINT_URL = 'https://api.github.com/repos/DaftVino/SheetWeaver-
 const UPDATE_CHECK_RESULT_KEY = 'update_check_result';
 const UPDATE_CHECK_TS_KEY = 'update_check_ts';
 const UPDATE_CHECK_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-
-function getAdminEmail() {
-  return PropertiesService.getScriptProperties().getProperty(ADMIN_EMAIL_KEY) || '';
-}
+const REGISTRY_KEY = 'capture_registry';
 
 function isAdmin(email) {
   if (!email) return false;
-  const admin = getAdminEmail();
-  if (admin && email.toLowerCase() === admin.toLowerCase()) return true;
-  return ADMIN_EMAILS.some(function(a) { return email.toLowerCase() === a.toLowerCase(); });
+  const admin = PropertiesService.getScriptProperties().getProperty(ADMIN_EMAIL_KEY) || '';
+  return admin !== '' && email.toLowerCase() === admin.toLowerCase();
 }
 
 function bootstrapAdmin() {
@@ -153,7 +148,7 @@ function getEmailBody(msg) {
 
 function getAdminDiagnostics() {
   const caller = getActiveEmail();
-  if (!isAdmin(caller)) return { authorized: false };
+  if (!isAdmin(caller)) return { success: false, error: 'Not authorized.' };
   const props = PropertiesService.getScriptProperties();
   const index = JSON.parse(props.getProperty(DIAG_INDEX_KEY) || '[]');
   const events = index.map(function(id) {
@@ -162,7 +157,7 @@ function getAdminDiagnostics() {
       return raw ? JSON.parse(raw) : null;
     } catch(e) { return null; }
   }).filter(Boolean);
-  const registryRaw = props.getProperty('capture_registry') || '[]';
+  const registryRaw = props.getProperty(REGISTRY_KEY) || '[]';
   const registry = JSON.parse(registryRaw);
   const registryByteSize = registryRaw.length;
   const perUserCounts = {};
@@ -200,7 +195,7 @@ function logClientError(payload) {
 function getDebugSnapshot() {
   const email = getActiveEmail();
   const props = PropertiesService.getScriptProperties();
-  const registry = JSON.parse(props.getProperty('capture_registry') || '[]');
+  const registry = JSON.parse(props.getProperty(REGISTRY_KEY) || '[]');
   const myConns = registry
     .filter(function(c) { return c.userEmail === email; })
     .map(function(c) {
@@ -229,7 +224,7 @@ const UPDATE_CHECK_ERROR_BACKOFF_MS = 60 * 60 * 1000; // 1-hour backoff on fetch
 
 function checkForUpdates() {
   const caller = getActiveEmail();
-  if (!isAdmin(caller)) return { authorized: false };
+  if (!isAdmin(caller)) return { success: false, error: 'Not authorized.' };
   const props = PropertiesService.getScriptProperties();
   const cachedTs = parseInt(props.getProperty(UPDATE_CHECK_TS_KEY) || '0', 10);
   const now = Date.now();
@@ -340,10 +335,10 @@ function enableUserTrigger() {
 // ==========================================
 function getDashboardData() {
   try {
-  const email = Session.getActiveUser().getEmail();
+  const email = getActiveEmail();
   const props = PropertiesService.getScriptProperties();
 
-  let registry = JSON.parse(props.getProperty('capture_registry') || '[]');
+  let registry = JSON.parse(props.getProperty(REGISTRY_KEY) || '[]');
   let connections = [];
 
   registry.forEach(conn => {
@@ -404,10 +399,10 @@ function getDashboardData() {
 function togglePauseConnection(tabName, url) {
   try {
     const props = PropertiesService.getScriptProperties();
-    let registry = JSON.parse(props.getProperty('capture_registry') || '[]');
+    let registry = JSON.parse(props.getProperty(REGISTRY_KEY) || '[]');
 
     // GS-1: Authorization guard
-    const activeEmail = Session.getActiveUser().getEmail();
+    const activeEmail = getActiveEmail();
     const targetConn = registry.find(c => c.tabName === tabName && c.spreadsheetUrl === url);
     if (!targetConn || targetConn.userEmail !== activeEmail) {
       return { success: false, error: "Not authorized." };
@@ -419,7 +414,7 @@ function togglePauseConnection(tabName, url) {
       }
       return conn;
     });
-    props.setProperty('capture_registry', JSON.stringify(registry));
+    props.setProperty(REGISTRY_KEY, JSON.stringify(registry));
 
     try {
       const ss = SpreadsheetApp.openByUrl(url);
@@ -448,17 +443,17 @@ function togglePauseConnection(tabName, url) {
 function deleteConnection(tabName, url) {
   try {
     const props = PropertiesService.getScriptProperties();
-    let registry = JSON.parse(props.getProperty('capture_registry') || '[]');
+    let registry = JSON.parse(props.getProperty(REGISTRY_KEY) || '[]');
 
     // GS-1: Authorization guard
-    const activeEmail = Session.getActiveUser().getEmail();
+    const activeEmail = getActiveEmail();
     const targetConn = registry.find(c => c.tabName === tabName && c.spreadsheetUrl === url);
     if (!targetConn || targetConn.userEmail !== activeEmail) {
       return { success: false, error: "Not authorized." };
     }
 
     registry = registry.filter(conn => !(conn.tabName === tabName && conn.spreadsheetUrl === url));
-    props.setProperty('capture_registry', JSON.stringify(registry));
+    props.setProperty(REGISTRY_KEY, JSON.stringify(registry));
 
     try {
       const ss = SpreadsheetApp.openByUrl(url);
@@ -481,13 +476,13 @@ function deleteConnection(tabName, url) {
 function repairConnection(tabName, url) {
   try {
     const props = PropertiesService.getScriptProperties();
-    let registry = JSON.parse(props.getProperty('capture_registry') || '[]');
+    let registry = JSON.parse(props.getProperty(REGISTRY_KEY) || '[]');
     let conn = registry.find(c => c.tabName === tabName && c.spreadsheetUrl === url);
     
     if (!conn) return { success: false, error: "Connection not found in registry." };
 
     // GS-C: Authorization guard — only the owner may repair their own connection
-    const activeEmail = Session.getActiveUser().getEmail();
+    const activeEmail = getActiveEmail();
     if (conn.userEmail !== activeEmail) {
       return { success: false, error: "Not authorized." };
     }
@@ -505,9 +500,9 @@ function repairConnection(tabName, url) {
 }
 
 function getEditConfig(tabName, url) {
-  const activeEmail = Session.getActiveUser().getEmail();
+  const activeEmail = getActiveEmail();
   const _props = PropertiesService.getScriptProperties();
-  const _registry = JSON.parse(_props.getProperty('capture_registry') || '[]');
+  const _registry = JSON.parse(_props.getProperty(REGISTRY_KEY) || '[]');
   const _conn = _registry.find(c => c.tabName === tabName && c.spreadsheetUrl === url);
   if (!_conn || _conn.userEmail !== activeEmail) {
     const reportId = logDiag('WARN', 'getEditConfig', { message: 'unauthorized access attempt', tabName: tabName, userEmail: activeEmail });
@@ -515,7 +510,7 @@ function getEditConfig(tabName, url) {
   }
   try {
     const props = PropertiesService.getScriptProperties();
-    const registry = JSON.parse(props.getProperty('capture_registry') || '[]');
+    const registry = JSON.parse(props.getProperty(REGISTRY_KEY) || '[]');
     const connData = registry.find(c => c.tabName === tabName && c.spreadsheetUrl === url);
     
     let initialSync = connData ? connData.initialSync : '50';
@@ -587,15 +582,6 @@ function getEditConfig(tabName, url) {
 // ==========================================
 // SETUP FUNCTIONS
 // ==========================================
-function verifyLabel(labelName) {
-  try {
-    return GmailApp.getUserLabelByName(labelName) !== null;
-  } catch (e) {
-    logDiag('ERROR', 'verifyLabel', { errorClass: e.name, message: e.message, labelName: labelName });
-    return false;
-  }
-}
-
 var SYSTEM_LABELS = ['inbox', 'sent', 'spam', 'trash', 'drafts', 'draft', 'starred', 'important', 'unread', 'chat'];
 
 function verifyLabelDetailed(labelName) {
@@ -754,7 +740,7 @@ function setupSpreadsheet(labelName, tabName, targetUrl, headerConfigs, initialS
       return { success: false, error: 'Please enter a Google Sheet URL before saving.' };
     }
 
-    const activeEmail = Session.getActiveUser().getEmail();
+    const activeEmail = getActiveEmail();
 
     const ss = SpreadsheetApp.openByUrl(targetUrl);
 
@@ -809,7 +795,7 @@ function setupSpreadsheet(labelName, tabName, targetUrl, headerConfigs, initialS
     sheet.autoResizeColumns(1, names.length);
 
     const props = PropertiesService.getScriptProperties();
-    let registry = JSON.parse(props.getProperty('capture_registry') || '[]');
+    let registry = JSON.parse(props.getProperty(REGISTRY_KEY) || '[]');
     
     let filterTabName = originalTabName ? originalTabName : tabName;
     registry = registry.filter(conn => !(conn.tabName === filterTabName && conn.spreadsheetUrl === targetUrl));
@@ -825,7 +811,7 @@ function setupSpreadsheet(labelName, tabName, targetUrl, headerConfigs, initialS
       lastSyncTime: null,
       headerConfigs: headerConfigs // NEW: Backup configurations to enable repairs
     });
-    props.setProperty('capture_registry', JSON.stringify(registry));
+    props.setProperty(REGISTRY_KEY, JSON.stringify(registry));
 
     let triggerEnabled = false;
     try {
@@ -878,9 +864,9 @@ function processEmails() {
   const DEADLINE_MS = 4.5 * 60 * 1000;
   const CURSOR_BATCH = 100;
   const startTime = Date.now();
-  const activeEmail = Session.getActiveUser().getEmail();
+  const activeEmail = getActiveEmail();
   const props = PropertiesService.getScriptProperties();
-  const registry = JSON.parse(props.getProperty('capture_registry') || '[]');
+  const registry = JSON.parse(props.getProperty(REGISTRY_KEY) || '[]');
 
   let syncResults = [];
 
@@ -1093,7 +1079,7 @@ function processEmails() {
     const lock = LockService.getScriptLock();
     if (lock.tryLock(10000)) {
       try {
-        let freshRegistry = JSON.parse(props.getProperty('capture_registry') || '[]');
+        let freshRegistry = JSON.parse(props.getProperty(REGISTRY_KEY) || '[]');
         freshRegistry.forEach(c => {
           const result = syncResults.find(u => u.tabName === c.tabName && u.url === c.spreadsheetUrl);
           if (result) {
@@ -1102,7 +1088,7 @@ function processEmails() {
             if (result.nextCursor !== undefined) c.syncCursor = result.nextCursor;
           }
         });
-        props.setProperty('capture_registry', JSON.stringify(freshRegistry));
+        props.setProperty(REGISTRY_KEY, JSON.stringify(freshRegistry));
       } finally {
         lock.releaseLock();
       }
