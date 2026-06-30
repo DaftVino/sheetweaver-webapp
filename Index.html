@@ -363,7 +363,7 @@
 
       .step { display: none; }
       .step.active { display: block; }
-      input[type="text"], input[type="email"], select {
+      input[type="text"], input[type="email"], select, textarea {
         padding: var(--space-2);
         margin: var(--space-1) 0;
         border: 1px solid var(--border-strong);
@@ -371,9 +371,11 @@
         box-sizing: border-box;
         background: var(--bg-input);
         color: var(--text-main);
+        font-family: inherit;
+        font-size: inherit;
       }
       input::placeholder { color: var(--text-muted); opacity: 1; }
-      button { background-color: var(--primary); color: var(--button-text); padding: var(--space-2) var(--space-4); border: none; border-radius: var(--radius-sm); cursor: pointer; font-size: var(--font-sm); font-weight: 500; letter-spacing: 0.01em; min-height: 44px; transition: background-color 150ms ease, box-shadow 150ms ease; }
+      button { background-color: var(--primary); color: var(--button-text); padding: var(--space-2) var(--space-4); border: none; border-radius: var(--radius-sm); cursor: pointer; font-size: var(--font-sm); font-weight: 500; letter-spacing: 0.01em; min-height: 44px; transition: background-color 150ms ease, box-shadow 150ms ease; font-family: inherit; }
       button:hover { background-color: var(--primary-hover); box-shadow: 0 2px 6px var(--shadow); }
       /* Compact controls opt out of the 44px minimum */
       .reorder-btns button, .theme-segment, .preview-toggle-btn, .action-btn, .admin-btn, .debug-btn { min-height: 0; }
@@ -388,7 +390,7 @@
       .neutral-box { background-color: var(--bg-subtle); border-left: 4px solid var(--secondary); color: var(--text-main); }
 
       .sync-banner { background: var(--warning-bg); color: var(--warning-text); padding: var(--space-4); border-radius: var(--radius-sm); display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-5); border: 1px solid var(--warning-border); gap: var(--space-3); position: sticky; top: 10px; z-index: 100; box-shadow: var(--shadow-lg);}
-      .sync-banner.active { background: var(--success-bg); color: var(--success-text); border-color: var(--success-border); }
+      .sync-banner.active { background: var(--primary-soft); color: var(--primary-soft-text); border-color: var(--primary); }
 
       .dashboard-table { width: 100%; border-collapse: collapse; margin-top: var(--space-5); font-size: var(--font-sm); font-variant-numeric: tabular-nums; }
       .dashboard-table th, .dashboard-table td { border: none; border-bottom: 1px solid var(--border); padding: 10px var(--space-3); text-align: left; }
@@ -437,9 +439,9 @@
       .email-navigator button:hover { background-color: var(--secondary-hover); }
       .email-counter { font-weight: bold; font-size: var(--font-sm); color: var(--text-main); font-variant-numeric: tabular-nums; }
 
-      .email-preview { background-color: var(--bg-input); color: var(--text-main); padding: var(--space-4); font-family: monospace; white-space: pre-wrap; max-height: 200px; overflow-y: auto; border: 1px solid var(--border); border-radius: 0 0 var(--radius-sm) var(--radius-sm); margin-bottom: var(--space-5); box-shadow: inset 0 1px 3px var(--shadow-inset); }
+      .email-preview { background-color: var(--bg-input); color: var(--text-main); padding: var(--space-4); font-family: inherit; white-space: pre-wrap; max-height: 200px; overflow-y: auto; border: 1px solid var(--border); border-radius: 0 0 var(--radius-sm) var(--radius-sm); margin-bottom: var(--space-5); box-shadow: inset 0 1px 3px var(--shadow-inset); }
 
-      .header-list { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); background: var(--bg-subtle); padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-md); }
+      .header-list { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); background: var(--bg-subtle); padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-md); font-size: var(--font-sm); }
       .header-list:hover { background: var(--bg-subtle-hover); }
       .reorder-btns { display: flex; flex-direction: column; gap: var(--space-1); }
       .reorder-btns button { padding: var(--space-1) var(--space-2); font-size: var(--font-xs); background: var(--secondary); color: var(--on-secondary); line-height: 1; }
@@ -511,10 +513,13 @@
       /* Step progress indicator */
       .step-progress { display: flex; align-items: center; gap: 0; margin-bottom: var(--space-5); }
       .step-progress-item { display: flex; align-items: center; gap: var(--space-2); font-size: var(--font-sm); color: var(--text-muted); }
-      .step-progress-item.active { color: var(--primary); font-weight: bold; }
-      .step-progress-item.done { color: var(--success-text); }
+      .step-progress-item.active { color: var(--primary); font-weight: bold; font-size: 14px; }
+      .step-progress-item.done { color: var(--text-muted); }
       .step-progress-num { width: 22px; height: 22px; border-radius: 50%; border: 2px solid currentColor; display: flex; align-items: center; justify-content: center; font-size: var(--font-xs); font-weight: bold; flex-shrink: 0; }
       .step-progress-sep { flex: 1; height: 2px; background: var(--border); margin: 0 var(--space-2); min-width: 20px; }
+
+      /* Mobile compact text: hidden by default, shown only at small breakpoint */
+      .counter-short { display: none; }
 
       /* Email preview toggle */
       .preview-toggle-btn { font-size: var(--font-xs); color: var(--primary); background: none; border: none; cursor: pointer; padding: 0; margin-bottom: var(--space-1); font-family: inherit; }
@@ -550,6 +555,13 @@
 
       /* Phone card layout for dashboard table (< 600px) */
       @media (max-width: 599px) {
+        .step-progress { flex-wrap: nowrap; justify-content: center; width: 100%; }
+        .step-progress-item > span:not(.step-progress-num) { display: none; }
+        .step-progress-sep { flex: 1; min-width: var(--space-2); }
+        .nav-label { display: none; }
+        .nav-long-text { display: none; }
+        .counter-full { display: none; }
+        .counter-short { display: inline; }
         .dashboard-table { display: block; overflow-x: visible; }
         .dashboard-table thead { display: none; }
         .dashboard-table tbody { display: flex; flex-direction: column; gap: var(--space-3); }
@@ -700,7 +712,7 @@
       </div>
 
       <div id="step-1" class="step">
-        <button class="secondary-btn" onclick="loadDashboard()">&#8592; Back to Dashboard</button>
+        <button class="secondary-btn" onclick="loadDashboard()">&#8592; Back<span class="nav-long-text"> to Dashboard</span></button>
         <br>
         <label for="labelName">Enter the Gmail Label name to capture:</label>
         <input style="width:100%" type="text" id="labelName" placeholder="Label Name">
@@ -709,7 +721,7 @@
       </div>
 
       <div id="step-2" class="step">
-        <button class="secondary-btn" onclick="loadDashboard()">&#8592; Back to Dashboard</button>
+        <button class="secondary-btn" onclick="loadDashboard()">&#8592; Back<span class="nav-long-text"> to Dashboard</span></button>
         <br>
         
         <h3 style="margin-top:0;">Configure Spreadsheet Data</h3>
@@ -744,9 +756,9 @@
         </div>
 
         <div class="email-navigator">
-          <button id="prevEmailBtn" onclick="changeEmail(-1)">&#8592; Previous Email</button>
-          <span id="emailCounter" class="email-counter">Loading...</span>
-          <button id="nextEmailBtn" onclick="changeEmail(1)">Next Email &#8594;</button>
+          <button id="prevEmailBtn" onclick="changeEmail(-1)">&#8592;<span class="nav-label"> Previous Email</span></button>
+          <span id="emailCounter" class="email-counter"><span id="emailCounterFull" class="counter-full">Loading...</span><span id="emailCounterShort" class="counter-short"></span></span>
+          <button id="nextEmailBtn" onclick="changeEmail(1)"><span class="nav-label">Next Email </span>&#8594;</button>
         </div>
         <button type="button" class="preview-toggle-btn" id="previewToggleBtn" onclick="toggleEmailPreview()">Expand preview ▼</button>
         <div id="emailPreview" class="email-preview">Loading preview...</div>
@@ -767,7 +779,7 @@
 
         <div id="headerContainer"></div>
         
-        <button onclick="addHeaderInput()" class="success-btn" style="margin-top: var(--space-1); margin-bottom: var(--space-5);">+ Add Custom Header</button>
+        <button onclick="addHeaderInput()" class="secondary-btn" style="margin-top: var(--space-1); margin-bottom: var(--space-5);">+ Add Custom Header</button>
         <br>
         <button id="saveBtn" onclick="saveConfiguration()">Accept & Update Tab</button>
       </div>
@@ -1025,7 +1037,7 @@
           bannerContainer.innerHTML = `
             <div class="sync-banner">
               <span><strong>⚠️ Auto-Sync is Off:</strong> You must enable sync for your background processing to work.</span>
-              <button onclick="enableSync(this)" class="success-btn" style="padding: var(--space-2) var(--space-3); font-size: var(--font-sm);">Enable 15-Min Auto-Sync</button>
+              <button onclick="enableSync(this)" style="padding: var(--space-2) var(--space-3); font-size: var(--font-sm);">Enable 15-Min Auto-Sync</button>
             </div>
           `;
         } else {
@@ -1046,14 +1058,13 @@
 
         const tdLabel = document.createElement('td');
         tdLabel.dataset.label = 'Gmail Label';
-        tdLabel.style.fontFamily = 'monospace';
+        tdLabel.style.fontFamily = 'inherit';
         tdLabel.style.background = 'transparent';
         tdLabel.textContent = conn.gmailLabel;
         tr.appendChild(tdLabel);
 
         const tdTab = document.createElement('td');
         tdTab.dataset.label = 'Sheet Tab';
-        tdTab.style.fontWeight = 'bold';
         if (conn.accessDenied) {
           const s = document.createElement('span');
           s.style.color = 'var(--text-muted)';
@@ -1702,7 +1713,10 @@
       function updateEmailDisplay() {
         fullEmailText = fetchedEmailBodies[currentEmailIndex];
         document.getElementById('emailPreview').innerText = fullEmailText;
-        document.getElementById('emailCounter').innerText = `Email ${currentEmailIndex + 1} of ${fetchedEmailBodies.length}`;
+        const _ef = document.getElementById('emailCounterFull');
+        const _es = document.getElementById('emailCounterShort');
+        if (_ef) _ef.textContent = `Email ${currentEmailIndex + 1} of ${fetchedEmailBodies.length}`;
+        if (_es) _es.textContent = `${currentEmailIndex + 1} / ${fetchedEmailBodies.length}`;
         
         document.getElementById('prevEmailBtn').disabled = (currentEmailIndex === 0);
         document.getElementById('nextEmailBtn').disabled = (currentEmailIndex === fetchedEmailBodies.length - 1);
@@ -2209,7 +2223,7 @@
         const ta = document.createElement('textarea');
         ta.readOnly = true;
         ta.value = text;
-        ta.style.cssText = 'width:100%; height:120px; font-size: var(--font-xs); font-family:monospace; resize:vertical; background:var(--bg-subtle); color:var(--text-main); border:1px solid var(--border); border-radius: var(--radius-sm); padding: var(--space-2);';
+        ta.style.cssText = 'width:100%; height:120px; font-size: var(--font-xs); font-family: ui-monospace, Consolas, \'Courier New\', monospace; resize:vertical; background:var(--bg-subtle); color:var(--text-main); border:1px solid var(--border); border-radius: var(--radius-sm); padding: var(--space-2);';
         const closeBtn = document.createElement('button');
         closeBtn.type = 'button';
         closeBtn.textContent = 'Close';
