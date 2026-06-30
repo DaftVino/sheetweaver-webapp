@@ -97,6 +97,30 @@ A report ID is included in the error message — share it with your admin.
 
 ---
 
+## Stuck in a Login / Permission Loop (Works Only in Incognito)
+
+**Symptom:** in a normal browser tab the app keeps asking you to sign in or grant permission — pick an account, approve, and it just loops back to the login screen. The same URL works fine in an **Incognito/Private window**.
+
+**Cause:** a **stale or mismatched authorization cookie** saved for the app's domain. An Apps Script web app stores a session cookie that ties your browser to a *completed* authorization for a specific account and deployment version. That cookie can get into a bad state — for example after switching Google accounts, dismissing the consent screen partway through, or when the admin pushes a new deployment version. On each load the app tries to reconcile the bad cookie, fails, and redirects you to log in again. Incognito works because it starts with no stored cookies.
+
+**Fix (fastest — clears just this site):**
+
+1. In the address bar, click the **site-info button** (the icon to the left of the URL — a tune/sliders or lock icon).
+2. Choose **Cookies and site data** → **Manage / Delete** the data for this site (or **Reset permissions**).
+3. **Reload** the page.
+
+You will usually go **straight into the app without logging in again** — your browser is still signed into Google at the account level, so the app silently issues a fresh, clean session cookie.
+
+**If it still loops after clearing cookies:** the cross-site cookies the app relies on are being *blocked* (not just stale). Check, in order:
+
+- A **privacy/ad-blocking extension** (uBlock Origin, Privacy Badger, Ghostery, AdGuard, etc.) — pause it for this site, or whitelist the app URL. (Extensions are off by default in Incognito, which is often why Incognito works.)
+- **Third-party cookies blocked** in `chrome://settings/cookies` — add **Allow** exceptions for `[*.]google.com` and `[*.]googleusercontent.com`.
+- **Enhanced Tracking Protection** (Brave / Firefox / Edge) — set to Standard or add a site exception.
+
+This is a browser-side issue; no app redeploy is needed.
+
+---
+
 ## `clasp push` Fails with "Could not find script"
 
 Your `.clasp.json` contains a `scriptId` your Google account does not have edit access to. Either:
