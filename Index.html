@@ -1188,14 +1188,12 @@
       function _renderSyncBanner(hasTrigger, hasOwnedConnections) {
         const bannerContainer = document.getElementById('syncBannerContainer');
         if (hasTrigger) {
-          bannerContainer.innerHTML = `<div class="sync-banner active"><span><strong>✅ Auto-Sync is Active:</strong> Your emails are being captured automatically every 15 minutes.</span></div>`;
+          bannerContainer.innerHTML = '<div class="sync-banner active"><span><strong>✅ Auto-Sync is Active:</strong> Your emails are being captured automatically every 15 minutes.</span></div>';
         } else if (hasOwnedConnections) {
-          bannerContainer.innerHTML = `
-            <div class="sync-banner">
-              <span><strong>⚠️ Auto-Sync is Off:</strong> You must enable sync for your background processing to work.</span>
-              <button onclick="enableSync(this)" style="padding: var(--space-2) var(--space-3); font-size: var(--font-sm);">Enable 15-Min Auto-Sync</button>
-            </div>
-          `;
+          bannerContainer.innerHTML = '<div class="sync-banner">' +
+            '<span><strong>⚠️ Auto-Sync is Off:</strong> You must enable sync for your background processing to work.</span>' +
+            '<button onclick="enableSync(this)" style="padding: var(--space-2) var(--space-3); font-size: var(--font-sm);">Enable 15-Min Auto-Sync</button>' +
+            '</div>';
         } else {
           bannerContainer.innerHTML = '';
         }
@@ -1719,29 +1717,28 @@
           const hr = document.createElement('hr');
           errorDiv.appendChild(hr);
           const instDiv = document.createElement('div');
-          instDiv.innerHTML = `
-            <strong>Important:</strong> If a label is nested inside another label (like a subfolder), provide the full path. <em>Ex: Labels Folder Name/Nested Label Name</em>
-            <hr>
-            <strong>Steps to create an auto filter (web/desktop Gmail):</strong>
-            <ol>
-              <li>Open Gmail in a web browser and click the <strong>Show search options</strong> (sliders) icon in the search box at top.</li>
-              <li>Fill one or more criteria (From, To, Subject, Has the words, Doesn't have, Size, etc.) to match the messages you want filtered.</li>
-              <li>At the bottom of that dialog click <strong>Create filter</strong>.</li>
-              <li>In the action list, check <strong>Apply the label</strong> and choose an existing label or click <strong>New label</strong> to create one (you can nest labels if desired).</li>
-              <li>If you want the rule to also move existing messages that match, check <strong>Also apply filter to matching conversations</strong>.</li>
-              <li>Optionally check <em>Skip the Inbox (Archive)</em>, <em>Mark as read</em>, <em>Star it</em>, or other actions as needed, then click <strong>Create filter</strong>.</li>
-            </ol>
-            <strong>Example (one-line):</strong><br>
-            To auto-label all emails from example@vendor.com: open search options &rarr; From: example@vendor.com &rarr; Create filter &rarr; Apply the label: Vendor &rarr; Create filter.
-            <hr>
-            <strong>Notes and tips:</strong>
-            <ul>
-              <li>Filters are created in the web interface; the Gmail mobile app cannot create filters (use browser/desktop).</li>
-              <li>Use wildcard-like patterns like <code>*@domain.com</code> in the From field to catch any sender at that domain.</li>
-              <li>Labels are not exclusive folders &mdash; a message can have multiple labels and remain searchable under all of them.</li>
-            </ul>
-            <em>More info: <a href="https://support.google.com/mail/answer/6579?hl=en" target="_blank" rel="noopener noreferrer">Create rules to filter your emails</a></em>
-          `;
+          instDiv.innerHTML =
+            '<strong>Important:</strong> If a label is nested inside another label (like a subfolder), provide the full path. <em>Ex: Labels Folder Name/Nested Label Name</em>' +
+            '<hr>' +
+            '<strong>Steps to create an auto filter (web/desktop Gmail):</strong>' +
+            '<ol>' +
+              '<li>Open Gmail in a web browser and click the <strong>Show search options</strong> (sliders) icon in the search box at top.</li>' +
+              '<li>Fill one or more criteria (From, To, Subject, Has the words, Doesn\'t have, Size, etc.) to match the messages you want filtered.</li>' +
+              '<li>At the bottom of that dialog click <strong>Create filter</strong>.</li>' +
+              '<li>In the action list, check <strong>Apply the label</strong> and choose an existing label or click <strong>New label</strong> to create one (you can nest labels if desired).</li>' +
+              '<li>If you want the rule to also move existing messages that match, check <strong>Also apply filter to matching conversations</strong>.</li>' +
+              '<li>Optionally check <em>Skip the Inbox (Archive)</em>, <em>Mark as read</em>, <em>Star it</em>, or other actions as needed, then click <strong>Create filter</strong>.</li>' +
+            '</ol>' +
+            '<strong>Example (one-line):</strong><br>' +
+            'To auto-label all emails from example@vendor.com: open search options &rarr; From: example@vendor.com &rarr; Create filter &rarr; Apply the label: Vendor &rarr; Create filter.' +
+            '<hr>' +
+            '<strong>Notes and tips:</strong>' +
+            '<ul>' +
+              '<li>Filters are created in the web interface; the Gmail mobile app cannot create filters (use browser/desktop).</li>' +
+              '<li>Use wildcard-like patterns like <code>*@domain.com</code> in the From field to catch any sender at that domain.</li>' +
+              '<li>Labels are not exclusive folders &mdash; a message can have multiple labels and remain searchable under all of them.</li>' +
+            '</ul>' +
+            '<em>More info: <a href="https://support.google.com/mail/answer/6579?hl=en" target="_blank" rel="noopener noreferrer">Create rules to filter your emails</a></em>';
           errorDiv.appendChild(instDiv);
         }
 
@@ -1875,8 +1872,8 @@
         document.getElementById('emailPreview').innerText = fullEmailText;
         const _ef = document.getElementById('emailCounterFull');
         const _es = document.getElementById('emailCounterShort');
-        if (_ef) _ef.textContent = `Email ${currentEmailIndex + 1} of ${fetchedEmailBodies.length}`;
-        if (_es) _es.textContent = `${currentEmailIndex + 1} / ${fetchedEmailBodies.length}`;
+        if (_ef) _ef.textContent = 'Email ' + (currentEmailIndex + 1) + ' of ' + fetchedEmailBodies.length;
+        if (_es) _es.textContent = (currentEmailIndex + 1) + ' / ' + fetchedEmailBodies.length;
         
         document.getElementById('prevEmailBtn').disabled = (currentEmailIndex === 0);
         document.getElementById('nextEmailBtn').disabled = (currentEmailIndex === fetchedEmailBodies.length - 1);
@@ -1905,38 +1902,35 @@
         
         // Static structure only in innerHTML — no user-sourced values interpolated.
         // nameVal, patternVal, customChar, exampleVal are set below via .value/.textContent.
-        div.innerHTML = `
-          <div class="reorder-btns">
-            <button type="button" title="Move Up" aria-label="Move row up" onclick="moveRow(this, -1)">▲</button>
-            <button type="button" title="Move Down" aria-label="Move row down" onclick="moveRow(this, 1)">▼</button>
-          </div>
-          <input type="text" class="header-name" placeholder="Header Name" aria-label="Column header name">
-          <input type="text" class="header-pattern" placeholder="Pattern" aria-label="Match pattern" oninput="updateRowExample(this)" ${isSystem ? 'readonly style="background: var(--bg-subtle-hover);"' : ''}>
-
-          <div style="width: 110px; display: flex; flex-direction: column; gap: var(--space-1);">
-            <select class="delimiter-select" onchange="toggleCustomDelimiter(this); updateRowExample(this)" ${isSystem ? 'disabled' : ''} style="width:100%;">
-              <option value="newline" ${selectVal === 'newline' ? 'selected' : ''}>End of Line</option>
-              <option value="space" ${selectVal === 'space' ? 'selected' : ''}>Space</option>
-              <option value="comma" ${selectVal === 'comma' ? 'selected' : ''}>Comma (,)</option>
-              <option value="period" ${selectVal === 'period' ? 'selected' : ''}>Period (.)</option>
-              <option value="paragraph" ${selectVal === 'paragraph' ? 'selected' : ''}>Next Paragraph</option>
-              <option value="after" ${selectVal === 'after' ? 'selected' : ''}>Everything After</option>
-              <option value="email" ${selectVal === 'email' ? 'selected' : ''}>Whole Email</option>
-              <option value="custom" ${selectVal === 'custom' ? 'selected' : ''}>Custom Symbol...</option>
-            </select>
-            <input type="text" class="custom-delimiter-input" placeholder="Type symbol..." oninput="updateRowExample(this)" style="display: ${isCustom ? 'block' : 'none'}; padding: var(--space-1); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); font-size: var(--font-xs); width:100%;" ${isSystem ? 'disabled' : ''}>
-          </div>
-
-          <select class="format-select" onchange="updateRowExample(this)">
-            <option value="text" ${formatVal === 'text' ? 'selected' : ''}>Text (Abc)</option>
-            <option value="number" ${formatVal === 'number' ? 'selected' : ''}>Number (123)</option>
-            <option value="currency" ${formatVal === 'currency' ? 'selected' : ''}>Currency ($)</option>
-            <option value="percent" ${formatVal === 'percent' ? 'selected' : ''}>Percent (%)</option>
-            <option value="date" ${formatVal === 'date' ? 'selected' : ''}>Date & Time</option>
-          </select>
-          <div class="example-text"></div>
-          <button type="button" class="remove-btn" aria-label="Remove this column" title="Remove column" onclick="this.parentElement.remove()">X</button>
-        `;
+        div.innerHTML =
+          '<div class="reorder-btns">' +
+            '<button type="button" title="Move Up" aria-label="Move row up" onclick="moveRow(this, -1)">▲</button>' +
+            '<button type="button" title="Move Down" aria-label="Move row down" onclick="moveRow(this, 1)">▼</button>' +
+          '</div>' +
+          '<input type="text" class="header-name" placeholder="Header Name" aria-label="Column header name">' +
+          '<input type="text" class="header-pattern" placeholder="Pattern" aria-label="Match pattern" oninput="updateRowExample(this)"' + (isSystem ? ' readonly style="background: var(--bg-subtle-hover);"' : '') + '>' +
+          '<div style="width: 110px; display: flex; flex-direction: column; gap: var(--space-1);">' +
+            '<select class="delimiter-select" onchange="toggleCustomDelimiter(this); updateRowExample(this)"' + (isSystem ? ' disabled' : '') + ' style="width:100%;">' +
+              '<option value="newline"' + (selectVal === 'newline' ? ' selected' : '') + '>End of Line</option>' +
+              '<option value="space"' + (selectVal === 'space' ? ' selected' : '') + '>Space</option>' +
+              '<option value="comma"' + (selectVal === 'comma' ? ' selected' : '') + '>Comma (,)</option>' +
+              '<option value="period"' + (selectVal === 'period' ? ' selected' : '') + '>Period (.)</option>' +
+              '<option value="paragraph"' + (selectVal === 'paragraph' ? ' selected' : '') + '>Next Paragraph</option>' +
+              '<option value="after"' + (selectVal === 'after' ? ' selected' : '') + '>Everything After</option>' +
+              '<option value="email"' + (selectVal === 'email' ? ' selected' : '') + '>Whole Email</option>' +
+              '<option value="custom"' + (selectVal === 'custom' ? ' selected' : '') + '>Custom Symbol...</option>' +
+            '</select>' +
+            '<input type="text" class="custom-delimiter-input" placeholder="Type symbol..." oninput="updateRowExample(this)" style="display: ' + (isCustom ? 'block' : 'none') + '; padding: var(--space-1); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); font-size: var(--font-xs); width:100%;"' + (isSystem ? ' disabled' : '') + '>' +
+          '</div>' +
+          '<select class="format-select" onchange="updateRowExample(this)">' +
+            '<option value="text"' + (formatVal === 'text' ? ' selected' : '') + '>Text (Abc)</option>' +
+            '<option value="number"' + (formatVal === 'number' ? ' selected' : '') + '>Number (123)</option>' +
+            '<option value="currency"' + (formatVal === 'currency' ? ' selected' : '') + '>Currency ($)</option>' +
+            '<option value="percent"' + (formatVal === 'percent' ? ' selected' : '') + '>Percent (%)</option>' +
+            '<option value="date"' + (formatVal === 'date' ? ' selected' : '') + '>Date &amp; Time</option>' +
+          '</select>' +
+          '<div class="example-text"></div>' +
+          '<button type="button" class="remove-btn" aria-label="Remove this column" title="Remove column" onclick="this.parentElement.remove()">X</button>';
         // Set user-sourced values via safe DOM properties (never via innerHTML interpolation)
         div.querySelector('.header-name').value = nameVal;
         div.querySelector('.header-pattern').value = patternVal;
