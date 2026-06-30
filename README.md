@@ -106,9 +106,10 @@ As admin you can optionally set an org-wide default via a Script Property (`defa
 ├── scripts/
 │   └── local-verify.js  # Local gate — run before every push
 ├── docs/
-│   ├── setup-guide.md   # Full install and update instructions
+│   ├── setup-guide.md           # Full install and update instructions
+│   ├── first-time-user-flow.md  # End-user walkthrough (linked from the in-app Help menu)
 │   ├── troubleshooting.md
-│   └── qa-runbook.md    # Post-deploy test matrix
+│   └── qa-runbook.md            # Post-deploy test matrix
 └── .github/
     └── workflows/
         └── deploy.yml   # Manual-only CI deploy (project-specific — see file header)
@@ -121,6 +122,8 @@ As admin you can optionally set an org-wide default via a Script Property (`defa
 3. Define column headers and optional extraction patterns (regex or keyword delimiters).
 4. Save — the app registers the connection and automatically enables your 15-minute sync trigger.
 5. Emails arriving under the label are processed automatically every 15 minutes.
+
+First-time visitors see a dismissible welcome tip on the dashboard. The header shows the running app version (e.g. `v2.0.5`) and a **Help** menu linking to the Troubleshooting Guide, Setup Guide, [First-Time User Guide](docs/first-time-user-flow.md), Changelog, and a Report-a-Bug shortcut.
 
 ## Themes
 
