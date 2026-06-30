@@ -36,3 +36,4 @@ build/
 
 # Internal/planning docs + deploy essentials kept locally, never published
 archive/
+.gstack/
