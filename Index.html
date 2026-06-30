@@ -10,7 +10,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@500;600;700&family=Press+Start+2P&display=swap" rel="stylesheet">
     <style>
       :root {
-  --bg-page: #1a2744;
+  --bg-page: #0d3b38;
+  --bg-glow: rgba(45, 212, 191, 0.2);
   --bg-card: #ffffff;
 
   --bg-subtle: #f0f3f7;
@@ -91,7 +92,8 @@
 }
 
       body.theme-torres {
-        --bg-page: #1a2744;
+        --bg-page: #0f172a;
+        --bg-glow: rgba(45, 212, 191, 0.12);
         --bg-card: #212b3d;
         --bg-subtle: #2a3549;
         --bg-subtle-hover: #34435c;
@@ -132,6 +134,7 @@
       body.theme-nes {
         /* Commodore 64 inspired retro palette: grey case base, brown accents, rainbow badge stripe */
         --bg-page: #2f3e57;
+        --bg-glow: rgba(185, 67, 47, 0.15);
         --bg-card: #d8d5c8;
         --bg-subtle: #c8c3b8;
         --bg-subtle-hover: #b9b2a5;
@@ -241,8 +244,10 @@
         line-height: var(--leading-normal);
         padding: var(--space-5);
         background-color: var(--bg-page);
-        background-image: radial-gradient(rgba(255,255,255,0.055) 1px, transparent 1px);
-        background-size: 24px 24px;
+        background-image:
+          radial-gradient(rgba(255,255,255,0.055) 1px, transparent 1px),
+          radial-gradient(ellipse 80% 55% at 50% -5%, var(--bg-glow) 0%, transparent 70%);
+        background-size: 24px 24px, 100% 100%;
         color: var(--text-main);
         transition: background-color 180ms ease, color 180ms ease;
       }
@@ -371,7 +376,9 @@
       button { background-color: var(--primary); color: var(--button-text); padding: var(--space-2) var(--space-4); border: none; border-radius: var(--radius-sm); cursor: pointer; font-size: var(--font-sm); font-weight: 500; letter-spacing: 0.01em; min-height: 44px; transition: background-color 150ms ease, box-shadow 150ms ease; }
       button:hover { background-color: var(--primary-hover); box-shadow: 0 2px 6px rgba(15,118,110,0.28); }
       /* Compact controls opt out of the 44px minimum */
-      .reorder-btns button, .theme-segment, .preview-toggle-btn, .action-btn, .admin-btn { min-height: 0; }
+      .reorder-btns button, .theme-segment, .preview-toggle-btn, .action-btn, .admin-btn, .debug-btn { min-height: 0; }
+      .debug-btn { background: transparent; color: var(--text-muted); border: 1px solid var(--border); font-size: var(--font-xs); padding: var(--space-1) var(--space-3); border-radius: var(--radius-sm); white-space: nowrap; font-family: inherit; }
+      .debug-btn:hover { background: var(--bg-subtle); color: var(--text-main); box-shadow: none; }
       button:disabled { background-color: var(--disabled-bg); cursor: not-allowed; opacity: 0.6; }
 
       .instructions { background-color: var(--warning-bg); color: var(--warning-text); padding: var(--space-4); border-left: 4px solid var(--warning-border); margin-bottom: var(--space-4); font-size: var(--font-sm); line-height: var(--leading-normal); }
@@ -385,7 +392,9 @@
 
       .dashboard-table { width: 100%; border-collapse: collapse; margin-top: var(--space-5); font-size: var(--font-sm); font-variant-numeric: tabular-nums; }
       .dashboard-table th, .dashboard-table td { border: none; border-bottom: 1px solid var(--border); padding: 10px var(--space-3); text-align: left; }
-      .dashboard-table th { background-color: var(--bg-subtle); color: var(--text-soft); font-weight: bold; text-transform: uppercase; font-size: var(--font-xs); user-select: none; position: sticky; top: 0; z-index: 1; border-bottom: 2px solid var(--border); }
+      .dashboard-table th { background-color: var(--bg-subtle); color: var(--text-soft); font-family: 'Plus Jakarta Sans', system-ui, Arial, sans-serif; font-weight: bold; text-transform: uppercase; font-size: var(--font-xs); user-select: none; position: sticky; top: 0; z-index: 1; border-bottom: 2px solid var(--border); }
+      body.theme-nes .dashboard-table { font-family: monospace; }
+      body.theme-nes .dashboard-table th { font-family: monospace; }
       .dashboard-table th.sortable { cursor: pointer; }
       .dashboard-table th.sortable:hover { background-color: var(--bg-subtle-hover); }
       .dashboard-table th[aria-sort="ascending"] { color: var(--primary); }
@@ -580,7 +589,7 @@
             </span>
           </button>
         </div>
-        <button type="button" id="copyDebugBtn" onclick="copyDebugInfo()" style="padding: var(--space-1) var(--space-3); font-size: var(--font-xs); background:var(--secondary); color: var(--on-secondary); border:none; border-radius: var(--radius-sm); cursor:pointer; white-space:nowrap;" title="Copy debug snapshot to clipboard">Copy Debug</button>
+        <button type="button" id="copyDebugBtn" class="debug-btn" onclick="copyDebugInfo()" title="Copy debug snapshot to clipboard">Copy Debug</button>
       </div>
 
       <div class="account-tip">
