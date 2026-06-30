@@ -1,8 +1,12 @@
 # Troubleshooting
 
-Most failures produce a **report ID** (8-character hex string like `a1b2c3d4`). Give that ID to your admin; they can look it up in the Admin Diagnostics panel or in Apps Script → Executions. Non-admins see only the report ID — no raw error details are exposed.
+Most errors show a **report ID** — an 8-character code like `a1b2c3d4`. Give that ID
+to your admin. They can look it up in the Admin Diagnostics panel or in Apps Script →
+Executions. Regular users only see the report ID, never the raw error.
 
-**Fastest first step: click the Copy Debug button** in the top-right of any screen. It gathers your connection status, recent error report IDs, and browser context into a single text block you can paste directly into a support message. Client-side JavaScript errors are now also captured and included.
+**Do this first: click the Copy Debug button** in the top-right of any screen. It copies
+your capture status, recent report IDs, and browser details into one block of text. Paste
+that into your support message. Browser-side (JavaScript) errors are included too.
 
 ---
 
@@ -21,8 +25,10 @@ Use **Clear Diagnostics** in the Admin panel to reset the event list after resol
 
 ## Emails Are Not Being Processed
 
-**Check whether a trigger is active.**
-Open the web app dashboard. If a yellow banner says "Trigger not enabled," click the button to enable it. Setup now enables the trigger automatically — the banner is a fallback for cases where auto-enable failed.
+**Check whether the sync is on.**
+Open the web app dashboard. If a yellow banner says **"⚠️ Auto-Sync is Off,"** click
+**Enable 15-Min Auto-Sync**. Setup turns the sync on for you — this banner is a backup for
+the rare case where that failed.
 
 **Check execution logs.**
 In the Apps Script editor go to **Executions**. Look for `processEmails` runs. If they show errors, expand the stack trace or search for the report ID shown in the Admin panel.
@@ -101,7 +107,12 @@ A report ID is included in the error message — share it with your admin.
 
 **Symptom:** in a normal browser tab the app keeps asking you to sign in or grant permission — pick an account, approve, and it just loops back to the login screen. The same URL works fine in an **Incognito/Private window**.
 
-**Cause:** a **stale or mismatched authorization cookie** saved for the app's domain. An Apps Script web app stores a session cookie that ties your browser to a *completed* authorization for a specific account and deployment version. That cookie can get into a bad state — for example after switching Google accounts, dismissing the consent screen partway through, or when the admin pushes a new deployment version. On each load the app tries to reconcile the bad cookie, fails, and redirects you to log in again. Incognito works because it starts with no stored cookies.
+**Cause:** a **stale or mismatched sign-in cookie** for the app. The app saves a cookie
+that links your browser to a finished sign-in for one account and one app version. That
+cookie can go bad — for example after you switch Google accounts, close the consent screen
+too early, or after the admin pushes a new version. Each time the page loads, the app tries
+to fix the bad cookie, fails, and sends you back to the login screen. Incognito works
+because it starts with no saved cookies.
 
 **Fix (fastest — clears just this site):**
 

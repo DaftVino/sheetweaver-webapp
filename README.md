@@ -1,10 +1,10 @@
 <p align="center">
-  <img src="Logo\app-logo-header.png" alt="Sheet Weaver" width="360">
+  <img src="Logo\app-logo-header.png" alt="SheetWeaver" width="360">
 </p>
 
-# Gmail Label Tracker Sheet Webapp
+# SheetWeaver
 
-A Google Apps Script web app that automatically extracts structured data from Gmail labels into Google Sheets, running on a shared 15-minute schedule with no manual intervention required.
+SheetWeaver is a Google Apps Script web app that automatically extracts structured data from Gmail labels into Google Sheets, running on a 15-minute schedule with no manual intervention required.
 
 ## What It Does
 
@@ -57,7 +57,7 @@ Each installer creates their own Apps Script project and becomes the admin for t
 - [ ] Run `bootstrapAdmin` once in the Apps Script editor to register yourself as admin
 - [ ] Deploy as a web app — **Execute as:** User accessing the web app; **Who has access:** Anyone with a Google account
 - [ ] Choose access level: leave `access` as `ANYONE` for consumer + Workspace accounts, or change it to `DOMAIN` for Workspace-only restriction (redeploy after changing)
-- [ ] Open the web app, click **New Connection**, and enter your Sheet URL to complete your first connection
+- [ ] Open the web app, click **+ Add a new capture**, and enter your Sheet URL to complete your first capture
 - [ ] Optionally set an org-wide default Sheet URL via a `default_spreadsheet_url` Script Property so new users see a pre-filled URL
 - [ ] Share the web app URL with your team
 
@@ -118,7 +118,7 @@ As admin you can optionally set an org-wide default via a Script Property (`defa
 ## Usage Flow
 
 1. Open the web app URL — you see the **Dashboard** listing all your active connections.
-2. Click **New Connection** and enter a Gmail label name. The app verifies the label and scans recent emails to suggest field names.
+2. Click **+ Add a new capture** and enter a Gmail label name. The app verifies the label and scans recent emails to suggest field names.
 3. Define column headers and optional extraction patterns (regex or keyword delimiters).
 4. Save — the app registers the connection and automatically enables your 15-minute sync trigger.
 5. Emails arriving under the label are processed automatically every 15 minutes.
