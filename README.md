@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="Logo\Logo\Full Logo@0.25x.png" alt="Sheet Weaver" width="360">
+  <img src="Logo\app-logo-header.png" alt="Sheet Weaver" width="360">
 </p>
 
 # Gmail Label Tracker Sheet Webapp
