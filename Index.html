@@ -10,8 +10,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@500;600;700&family=Press+Start+2P&display=swap" rel="stylesheet">
     <style>
       :root {
-  --bg-page: #0d3b38;
-  --bg-glow: rgba(45, 212, 191, 0.2);
+  --bg-page: #0b3542;
+  --bg-glow: rgba(45, 200, 185, 0.18);
   --bg-card: #ffffff;
 
   --bg-subtle: #f0f3f7;
@@ -23,16 +23,16 @@
   --text-muted: #647084;
   --text-soft: #4d5a6e;
 
-  --primary: #0f766e;
-  --primary-hover: #0d6b62;
+  --primary: #0d7070;
+  --primary-hover: #0b6262;
   --primary-soft: #f0fdfa;
-  --primary-soft-text: #0f766e;
+  --primary-soft-text: #0d7070;
   --button-text: #ffffff;
 
   --border: #d7dde6;
   --border-strong: #b8c2d0;
 
-  --shadow: rgba(15, 118, 110, 0.12);
+  --shadow: rgba(13, 112, 112, 0.12);
   --shadow-inset: rgba(25, 36, 54, 0.06);
 
   --warning-bg: #fff1d6;
@@ -58,7 +58,7 @@
   --on-secondary: #ffffff;
 
   --example-bg: #f0fdfa;
-  --example-text: #0f766e;
+  --example-text: #0d7070;
 
   /* Spacing scale (4px base) */
   --space-1: 4px;
@@ -102,11 +102,11 @@
         --text-main: #f3f3f3;
         --text-muted: #c7cfdd;
         --text-soft: #dbe2ee;
-        --primary: #2dd4bf;
-        --primary-hover: #14b8a6;
+        --primary: #38c4b4;
+        --primary-hover: #2aada0;
         --primary-soft: #134e4a;
-        --primary-soft-text: #99f6e4;
-        --button-text: #0d2420;
+        --primary-soft-text: #90efdf;
+        --button-text: #0b2030;
         --border: #40506a;
         --border-strong: #566986;
         --shadow: rgba(0, 0, 0, 0.38);
@@ -128,7 +128,7 @@
         --secondary: #3a465a;
         --secondary-hover: #46546a;
         --example-bg: #134e4a;
-        --example-text: #99f6e4;
+        --example-text: #90efdf;
       }
 
       body.theme-nes {
@@ -374,7 +374,7 @@
       }
       input::placeholder { color: var(--text-muted); opacity: 1; }
       button { background-color: var(--primary); color: var(--button-text); padding: var(--space-2) var(--space-4); border: none; border-radius: var(--radius-sm); cursor: pointer; font-size: var(--font-sm); font-weight: 500; letter-spacing: 0.01em; min-height: 44px; transition: background-color 150ms ease, box-shadow 150ms ease; }
-      button:hover { background-color: var(--primary-hover); box-shadow: 0 2px 6px rgba(15,118,110,0.28); }
+      button:hover { background-color: var(--primary-hover); box-shadow: 0 2px 6px var(--shadow); }
       /* Compact controls opt out of the 44px minimum */
       .reorder-btns button, .theme-segment, .preview-toggle-btn, .action-btn, .admin-btn, .debug-btn { min-height: 0; }
       .debug-btn { background: transparent; color: var(--text-muted); border: 1px solid var(--border); font-size: var(--font-xs); padding: var(--space-1) var(--space-3); border-radius: var(--radius-sm); white-space: nowrap; font-family: inherit; }
@@ -490,7 +490,7 @@
       .toast-icon { flex-shrink: 0; font-style: normal; font-size: 15px; line-height: 1; }
       .toast-msg { flex: 1; text-align: left; }
       .toast-close { flex-shrink: 0; background: none; border: none; padding: 2px var(--space-1); margin: 0; cursor: pointer; color: currentColor; opacity: 0.55; font-size: 18px; line-height: 1; min-height: 0; font-weight: 400; border-radius: var(--radius-sm); }
-      .toast-close:hover { opacity: 1; background: rgba(0,0,0,0.08); }
+      .toast-close:hover { opacity: 1; background: var(--bg-subtle); box-shadow: none; }
       /* Confirm modal */
       #confirmModal .modal-content { max-width: 440px; }
       #confirmModal .modal-title { margin: 0 0 var(--space-3); font-size: var(--font-base); color: var(--text-main); }
@@ -1421,7 +1421,7 @@
         _showSkeletonRows();
         
         // HTML-B: helper for safe error rendering — no innerHTML interpolation
-        function renderDeleteError(prefix, msg) {
+        function _renderDeleteError(prefix, msg) {
           const tbody = document.getElementById('dashboardBody');
           tbody.innerHTML = '';
           const tr = document.createElement('tr');
@@ -1438,12 +1438,12 @@
         google.script.run
           .withFailureHandler(function(error) {
             _logFailure('deleteConnection', error, null);
-            renderDeleteError('Error deleting connection: ', error && error.message ? error.message : '');
+            _renderDeleteError('Error deleting connection: ', error && error.message ? error.message : '');
             setTimeout(loadDashboard, 3000);
           })
           .withSuccessHandler(function(res) {
             if(!res.success) {
-              renderDeleteError('Error: ', res && res.error ? res.error : '');
+              _renderDeleteError('Error: ', res && res.error ? res.error : '');
               setTimeout(loadDashboard, 3000);
             } else {
               loadDashboard();
@@ -1507,7 +1507,7 @@
           ridLabel.innerHTML = '<strong>Report ID:</strong>&nbsp;';
           const ridCode = document.createElement('code');
           ridCode.textContent = result.reportId;
-          ridCode.style.cssText = 'background:rgba(0,0,0,0.08); padding:2px 6px; border-radius:3px;';
+          ridCode.style.cssText = 'background:var(--bg-subtle); padding:2px 6px; border-radius:3px;';
           const copyBtn = document.createElement('button');
           copyBtn.textContent = 'Copy';
           copyBtn.style.cssText = 'padding: var(--space-1) var(--space-2); font-size: var(--font-xs); background:var(--secondary); color: var(--on-secondary);';
@@ -1985,7 +1985,7 @@
             }
             const box = document.createElement('div');
             box.className = 'info-box';
-            box.style.cssText = 'border-left: 4px solid var(--warning, #fbbc04); margin-bottom: 12px;';
+            box.style.cssText = 'border-left: 4px solid var(--warning-border); margin-bottom: 12px;';
             const msg = document.createElement('p');
             msg.style.margin = '0 0 var(--space-2)';
             const strong = document.createElement('strong');
@@ -2017,7 +2017,7 @@
 
       function loadAdminPanel(diagData) {
         const panel = document.getElementById('adminPanel');
-        if (!diagData || !diagData.authorized) {
+        if (!diagData || diagData.success === false) {
           panel.style.display = 'none';
           return;
         }
@@ -2206,13 +2206,13 @@
         }
 
         if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(text).then(showCopied, function() { showFallback(text); });
+          navigator.clipboard.writeText(text).then(showCopied, function() { _showFallback(text); });
         } else {
-          showFallback(text);
+          _showFallback(text);
         }
       }
 
-      function showFallback(text) {
+      function _showFallback(text) {
         const existing = document.getElementById('debugFallbackArea');
         if (existing) existing.remove();
         const wrapper = document.createElement('div');
