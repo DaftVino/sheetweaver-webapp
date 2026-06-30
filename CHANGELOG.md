@@ -4,6 +4,40 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.5] - 2026-06-30
+
+Cleanup and polish release on top of 2.0.0: in-app help and first-run guidance, header layout
+refinements, a server-side refactor pass, and security/robustness hardening.
+
+### Added
+- **Help menu** in the header (all views) — a `role="menu"` dropdown linking to the Troubleshooting
+  Guide, Setup Guide, First-Time User Guide, Changelog, and a Report-a-Bug shortcut. Full keyboard
+  contract (arrow keys within the menu, Escape closes and restores focus to the trigger).
+- **App version label** in the header, sourced from `APP_VERSION` and surfaced via existing
+  dashboard data (no new on-load RPC).
+- **First-time welcome tip** on the dashboard — dismissible, persisted per-user.
+- **`docs/first-time-user-flow.md`** — end-user walkthrough, linked from the in-app Help menu.
+
+### Changed
+- **Header layout** converted to a grid for predictable alignment of the title, version label, and
+  action buttons; Copy Debug / Help button styling unified.
+- **Server-side refactor** — `processEmails` and `loadDashboard` god-functions decomposed; registry
+  access moved behind an abstraction with consistent lock coverage; constants extracted and dead code
+  removed.
+- **Faster font loading** via `preconnect` and consistent typography tokens.
+- Documentation refreshed across README, ARCHITECTURE, setup-guide, troubleshooting, and qa-runbook.
+
+### Fixed
+- **`_showFallback` crash** — `insertBefore` failed when the close button had no rendered sibling;
+  the close button is now appended before positioning.
+- Mobile viewport meta tag is now emitted server-side in `doGet` so small screens render correctly.
+
+### Security
+- All client-side string-to-DOM paths converted from template literals to explicit string
+  concatenation, removing template-literal interpolation as an injection surface.
+
+[2.0.5]: https://github.com/DaftVino/SheetWeaver-Webapp/releases/tag/v2.0.5
+
 ## [2.0.0] - 2026-06-28
 
 First public release. Prior versions were private testing builds, so there is no earlier public
