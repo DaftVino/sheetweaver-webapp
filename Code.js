@@ -21,6 +21,9 @@ function doGet() {
   // setFaviconUrl requires a public https URL — becomes active once the repo is public.
   return HtmlService.createHtmlOutputFromFile('Index')
       .setTitle('Ops Email Tracker Setup')
+      // Must be set server-side: HtmlService ignores <meta> tags placed in the file's <head>.
+      // Without this the mobile layout renders at desktop width and looks tiny on phones.
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1')
       .setFaviconUrl('https://raw.githubusercontent.com/DaftVino/SheetWeaver-Webapp/main/Logo/Flavicon/favicon-32x32.png')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
