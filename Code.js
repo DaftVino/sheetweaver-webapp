@@ -855,6 +855,227 @@ function parseHeaderNoteToConfig(cellNote, headerName) {
   return { type: 'ignore' };
 }
 
+// Returns { threads, nextCursor, advanceSyncTime } for a single connection.
+function _buildEmailQuery(conn, CURSOR_BATCH) {
+  const searchQuery = `label:"${sanitizeGmailLabel(conn.gmailLabel)}"`;
+  let threads, nextCursor = undefined, advanceSyncTime = true;
+
+  if (!conn.lastSyncTime) {
+    if (conn.initialSync === '30days') {
+      threads = GmailApp.search(searchQuery + ' newer_than:30d', 0, 500);
+    } else if (conn.initialSync === 'all') {
+      const cursor = typeof conn.syncCursor === 'number' ? conn.syncCursor : 0;
+      const batch = GmailApp.search(searchQuery, cursor, CURSOR_BATCH);
+      threads = batch;
+      if (batch.length === CURSOR_BATCH) {
+        nextCursor = cursor + CURSOR_BATCH;
+        advanceSyncTime = false;
+      } else {
+        nextCursor = null;
+      }
+    } else {
+      threads = GmailApp.search(searchQuery, 0, 50);
+    }
+  } else {
+    const safeAfter = conn.lastSyncTime - 86400;
+    threads = GmailApp.search(searchQuery + ` after:${safeAfter}`, 0, 100);
+  }
+
+  return { threads, nextCursor, advanceSyncTime };
+}
+
+// Processes one connection: opens sheet, queries Gmail, diffs existing data, writes rows.
+// Returns a SyncResult object, or null if the connection should be silently skipped.
+function _processSingleConnection(conn, startTime, DEADLINE_MS, CURSOR_BATCH) {
+  const connStart = Date.now();
+  const counts = { scanned: 0, new: 0, updated: 0 };
+  let runStatus = 'ok';
+  let runReportId = null;
+
+  try {
+    const ss = SpreadsheetApp.openByUrl(conn.spreadsheetUrl);
+    const sheet = ss.getSheetByName(conn.tabName);
+    if (!sheet) return null;
+
+    const lastCol = sheet.getLastColumn();
+    if (lastCol === 0) return null;
+
+    const headerRange = sheet.getRange(1, 1, 1, lastCol);
+    const headers = headerRange.getValues()[0];
+    const notes = headerRange.getNotes()[0];
+
+    let configs = [];
+    let hasRules = false;
+    for (let i = 0; i < headers.length; i++) {
+      const cfg = parseHeaderNoteToConfig(notes[i], headers[i]);
+      if (cfg.type === 'system' && cfg.key === '') {
+        configs.push({ type: 'ignore' });
+      } else {
+        configs.push(cfg);
+        if (cfg.type !== 'ignore') hasRules = true;
+      }
+    }
+    if (!hasRules) return null;
+
+    const idColIndex = headers.indexOf('Message ID');
+    const dateColIndex = headers.indexOf('Date Received');
+
+    if (idColIndex === -1) {
+      runReportId = logDiag('WARN', 'processEmails:missingMsgIdCol', {
+        message: 'Message ID column missing — dedup disabled for this connection',
+        tabName: conn.tabName
+      });
+      if (runStatus === 'ok') runStatus = 'warn';
+    }
+    if (dateColIndex === -1) {
+      logDiag('WARN', 'processEmails:missingDateCol', {
+        message: 'Date Received column missing — sort skipped for this connection',
+        tabName: conn.tabName
+      });
+      if (runStatus === 'ok') runStatus = 'warn';
+    }
+
+    let existingIds = new Map();
+    let existingData = [];
+    let hasUpdates = false;
+    if (idColIndex > -1 && sheet.getLastRow() > 1) {
+      existingData = sheet.getRange(2, 1, sheet.getLastRow() - 1, lastCol).getValues();
+      existingData.forEach((row, index) => {
+        if (row[idColIndex]) existingIds.set(row[idColIndex].toString(), index);
+      });
+    }
+
+    const { threads, nextCursor, advanceSyncTime: canAdvance } = _buildEmailQuery(conn, CURSOR_BATCH);
+    let advanceSyncTime = canAdvance;
+    let newRows = [];
+    let htmlBodySeen = false;
+    let timedOut = false;
+
+    for (let t = threads.length - 1; t >= 0; t--) {
+      if (Date.now() - startTime > DEADLINE_MS) {
+        timedOut = true;
+        logDiag('WARN', 'processEmails:threadDeadline', {
+          message: 'Thread loop interrupted — deadline exceeded',
+          tabName: conn.tabName,
+          threadsRemaining: t + 1
+        });
+        break;
+      }
+
+      threads[t].getMessages().forEach(msg => {
+        counts.scanned++;
+        const msgId = msg.getId();
+        const bodyResult = getEmailBody(msg);
+        if (bodyResult.type === 'html') htmlBodySeen = true;
+        const rowData = extractDataFromEmail(bodyResult.text, msg, configs);
+
+        if (idColIndex > -1 && existingIds.has(msgId)) {
+          const dataIndex = existingIds.get(msgId);
+          if (dataIndex !== -1) {
+            const oldRow = existingData[dataIndex];
+            for (let c = 0; c < configs.length; c++) {
+              if (configs[c].type !== 'ignore') oldRow[c] = rowData[c] !== undefined ? rowData[c] : '';
+            }
+            existingData[dataIndex] = oldRow;
+            hasUpdates = true;
+            counts.updated++;
+            existingIds.set(msgId, -1);
+          }
+        } else {
+          newRows.push(rowData);
+          if (idColIndex > -1) existingIds.set(msgId, -1);
+          counts.new++;
+        }
+      });
+    }
+
+    if (hasUpdates) {
+      sheet.getRange(2, 1, existingData.length, existingData[0].length).setValues(existingData);
+    }
+    if (newRows.length > 0) {
+      sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, headers.length).setValues(newRows);
+      if (dateColIndex > -1 && sheet.getLastRow() > 1) {
+        sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn())
+             .sort({ column: dateColIndex + 1, ascending: false });
+      }
+    }
+
+    if (timedOut && runStatus === 'ok') runStatus = 'partial';
+
+    if (htmlBodySeen) {
+      const warnId = logDiag('WARN', 'processEmails:htmlBody', {
+        message: 'HTML-only email(s) detected — body stripped to plain text',
+        tabName: conn.tabName
+      });
+      if (runStatus === 'ok') runStatus = 'warn';
+      if (!runReportId) runReportId = warnId;
+    }
+
+    // If any first-run sync timed out, do NOT advance lastSyncTime — the next
+    // trigger run must retry the same window. Dedup via Message ID makes
+    // re-processing idempotent for connections that have the column.
+    // For 'all' mode also preserve the cursor so we re-run the same batch.
+    let finalNextCursor = nextCursor;
+    if (timedOut && !conn.lastSyncTime) {
+      advanceSyncTime = false;
+      if (conn.initialSync === 'all') finalNextCursor = undefined; // leave conn.syncCursor unchanged
+    }
+
+    return {
+      tabName: conn.tabName,
+      url: conn.spreadsheetUrl,
+      syncTime: Math.floor(Date.now() / 1000),
+      status: runStatus,
+      counts: counts,
+      reportId: runReportId,
+      error: null,
+      durationMs: Date.now() - connStart,
+      advanceSyncTime: advanceSyncTime,
+      nextCursor: finalNextCursor,
+      bodyType: htmlBodySeen ? 'html' : (counts.scanned > 0 ? 'plain' : 'empty')
+    };
+
+  } catch(e) {
+    const errReportId = logDiag('ERROR', 'processEmails', {
+      errorClass: e.name, message: e.message,
+      tabName: conn && conn.tabName, userEmail: conn && conn.userEmail
+    });
+    return {
+      tabName: conn.tabName,
+      url: conn.spreadsheetUrl,
+      syncTime: Math.floor(Date.now() / 1000),
+      status: 'error',
+      counts: counts,
+      reportId: errReportId,
+      error: e.message,
+      durationMs: Date.now() - connStart,
+      advanceSyncTime: false,
+      nextCursor: undefined
+    };
+  }
+}
+
+// Locked write-back: applies SyncResult data to the fresh registry and saves.
+function _flushRegistryResults(props, syncResults) {
+  const lock = LockService.getScriptLock();
+  if (lock.tryLock(10000)) {
+    try {
+      let freshRegistry = _readRegistry(props);
+      freshRegistry.forEach(c => {
+        const result = syncResults.find(u => u.tabName === c.tabName && u.url === c.spreadsheetUrl);
+        if (result) {
+          recordConnectionRun(c, result);
+          if (result.advanceSyncTime) c.lastSyncTime = result.syncTime;
+          if (result.nextCursor !== undefined) c.syncCursor = result.nextCursor;
+        }
+      });
+      _writeRegistry(props, freshRegistry);
+    } finally {
+      lock.releaseLock();
+    }
+  }
+}
+
 function processEmails() {
   const DEADLINE_MS = 4.5 * 60 * 1000;
   const CURSOR_BATCH = 100;
@@ -862,233 +1083,19 @@ function processEmails() {
   const activeEmail = getActiveEmail();
   const props = PropertiesService.getScriptProperties();
   const registry = _readRegistry(props);
-
-  let syncResults = [];
+  const syncResults = [];
 
   registry.forEach(conn => {
-    if (conn.userEmail !== activeEmail) return;
-    if (conn.isPaused) return;
-
+    if (conn.userEmail !== activeEmail || conn.isPaused) return;
     if (Date.now() - startTime > DEADLINE_MS) {
       logDiag('WARN', 'processEmails:deadline', { message: 'Skipping connection — wall-clock deadline exceeded', tabName: conn.tabName });
       return;
     }
-
-    const connStart = Date.now();
-    let counts = { scanned: 0, new: 0, updated: 0 };
-    let runStatus = 'ok';
-    let runReportId = null;
-    let advanceSyncTime = true;
-    let nextCursor = undefined;
-
-    try {
-      const ss = SpreadsheetApp.openByUrl(conn.spreadsheetUrl);
-      const sheet = ss.getSheetByName(conn.tabName);
-      if (!sheet) return;
-
-      const lastCol = sheet.getLastColumn();
-      if (lastCol === 0) return;
-
-      const headerRange = sheet.getRange(1, 1, 1, lastCol);
-      const headers = headerRange.getValues()[0];
-      const notes = headerRange.getNotes()[0];
-
-      let configs = [];
-      let hasRules = false;
-
-      for (let i = 0; i < headers.length; i++) {
-        const cfg = parseHeaderNoteToConfig(notes[i], headers[i]);
-        if (cfg.type === 'system' && cfg.key === '') {
-          configs.push({ type: 'ignore' });
-        } else {
-          configs.push(cfg);
-          if (cfg.type !== 'ignore') hasRules = true;
-        }
-      }
-
-      if (!hasRules) return;
-
-      const idColIndex = headers.indexOf('Message ID');
-      const dateColIndex = headers.indexOf('Date Received');
-
-      if (idColIndex === -1) {
-        runReportId = logDiag('WARN', 'processEmails:missingMsgIdCol', {
-          message: 'Message ID column missing — dedup disabled for this connection',
-          tabName: conn.tabName
-        });
-        if (runStatus === 'ok') runStatus = 'warn';
-      }
-
-      if (dateColIndex === -1) {
-        logDiag('WARN', 'processEmails:missingDateCol', {
-          message: 'Date Received column missing — sort skipped for this connection',
-          tabName: conn.tabName
-        });
-        if (runStatus === 'ok') runStatus = 'warn';
-      }
-
-      let existingIds = new Map();
-      let existingData = [];
-      let hasUpdates = false;
-
-      if (idColIndex > -1 && sheet.getLastRow() > 1) {
-        existingData = sheet.getRange(2, 1, sheet.getLastRow() - 1, lastCol).getValues();
-        existingData.forEach((row, index) => {
-          if (row[idColIndex]) existingIds.set(row[idColIndex].toString(), index);
-        });
-      }
-
-      const searchQuery = `label:"${sanitizeGmailLabel(conn.gmailLabel)}"`;
-      let threads = [];
-      let timedOut = false;
-
-      if (!conn.lastSyncTime) {
-        if (conn.initialSync === '30days') {
-          threads = GmailApp.search(searchQuery + ' newer_than:30d', 0, 500);
-        } else if (conn.initialSync === 'all') {
-          const cursor = typeof conn.syncCursor === 'number' ? conn.syncCursor : 0;
-          const batch = GmailApp.search(searchQuery, cursor, CURSOR_BATCH);
-          threads = batch;
-          if (batch.length === CURSOR_BATCH) {
-            nextCursor = cursor + CURSOR_BATCH;
-            advanceSyncTime = false;
-          } else {
-            nextCursor = null;
-          }
-        } else {
-          threads = GmailApp.search(searchQuery, 0, 50);
-        }
-      } else {
-        const safeAfter = conn.lastSyncTime - 86400;
-        threads = GmailApp.search(searchQuery + ` after:${safeAfter}`, 0, 100);
-      }
-
-      let newRows = [];
-      let htmlBodySeen = false;
-
-      for (let t = threads.length - 1; t >= 0; t--) {
-        if (Date.now() - startTime > DEADLINE_MS) {
-          timedOut = true;
-          logDiag('WARN', 'processEmails:threadDeadline', {
-            message: 'Thread loop interrupted — deadline exceeded',
-            tabName: conn.tabName,
-            threadsRemaining: t + 1
-          });
-          break;
-        }
-
-        const messages = threads[t].getMessages();
-        messages.forEach(msg => {
-          counts.scanned++;
-          const msgId = msg.getId();
-          const bodyResult = getEmailBody(msg);
-          if (bodyResult.type === 'html') htmlBodySeen = true;
-          const rowData = extractDataFromEmail(bodyResult.text, msg, configs);
-
-          if (idColIndex > -1 && existingIds.has(msgId)) {
-            const dataIndex = existingIds.get(msgId);
-            if (dataIndex !== -1) {
-              const oldRow = existingData[dataIndex];
-              for (let c = 0; c < configs.length; c++) {
-                if (configs[c].type !== 'ignore') oldRow[c] = rowData[c] !== undefined ? rowData[c] : '';
-              }
-              existingData[dataIndex] = oldRow;
-              hasUpdates = true;
-              counts.updated++;
-              existingIds.set(msgId, -1);
-            }
-          } else {
-            newRows.push(rowData);
-            if (idColIndex > -1) existingIds.set(msgId, -1);
-            counts.new++;
-          }
-        });
-      }
-
-      if (hasUpdates) {
-        sheet.getRange(2, 1, existingData.length, existingData[0].length).setValues(existingData);
-      }
-
-      if (newRows.length > 0) {
-        sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, headers.length).setValues(newRows);
-        if (dateColIndex > -1 && sheet.getLastRow() > 1) {
-          sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn())
-               .sort({ column: dateColIndex + 1, ascending: false });
-        }
-      }
-
-      if (timedOut && runStatus === 'ok') runStatus = 'partial';
-
-      if (htmlBodySeen) {
-        const warnId = logDiag('WARN', 'processEmails:htmlBody', {
-          message: 'HTML-only email(s) detected — body stripped to plain text',
-          tabName: conn.tabName
-        });
-        if (runStatus === 'ok') runStatus = 'warn';
-        if (!runReportId) runReportId = warnId;
-      }
-
-      // If any first-run sync timed out, do NOT advance lastSyncTime — the next
-      // trigger run must retry the same window. Dedup via Message ID makes
-      // re-processing idempotent for connections that have the column.
-      // For 'all' mode also preserve the cursor so we re-run the same batch.
-      if (timedOut && !conn.lastSyncTime) {
-        advanceSyncTime = false;
-        if (conn.initialSync === 'all') {
-          nextCursor = undefined; // leave conn.syncCursor unchanged
-        }
-      }
-
-      syncResults.push({
-        tabName: conn.tabName,
-        url: conn.spreadsheetUrl,
-        syncTime: Math.floor(Date.now() / 1000),
-        status: runStatus,
-        counts: counts,
-        reportId: runReportId,
-        error: null,
-        durationMs: Date.now() - connStart,
-        advanceSyncTime: advanceSyncTime,
-        nextCursor: nextCursor,
-        bodyType: htmlBodySeen ? 'html' : (counts.scanned > 0 ? 'plain' : 'empty')
-      });
-
-    } catch(e) {
-      const errReportId = logDiag('ERROR', 'processEmails', { errorClass: e.name, message: e.message, tabName: conn && conn.tabName, userEmail: conn && conn.userEmail });
-      syncResults.push({
-        tabName: conn.tabName,
-        url: conn.spreadsheetUrl,
-        syncTime: Math.floor(Date.now() / 1000),
-        status: 'error',
-        counts: counts,
-        reportId: errReportId,
-        error: e.message,
-        durationMs: Date.now() - connStart,
-        advanceSyncTime: false,
-        nextCursor: undefined
-      });
-    }
+    const result = _processSingleConnection(conn, startTime, DEADLINE_MS, CURSOR_BATCH);
+    if (result) syncResults.push(result);
   });
 
-  if (syncResults.length > 0) {
-    const lock = LockService.getScriptLock();
-    if (lock.tryLock(10000)) {
-      try {
-        let freshRegistry = _readRegistry(props);
-        freshRegistry.forEach(c => {
-          const result = syncResults.find(u => u.tabName === c.tabName && u.url === c.spreadsheetUrl);
-          if (result) {
-            recordConnectionRun(c, result);
-            if (result.advanceSyncTime) c.lastSyncTime = result.syncTime;
-            if (result.nextCursor !== undefined) c.syncCursor = result.nextCursor;
-          }
-        });
-        _writeRegistry(props, freshRegistry);
-      } finally {
-        lock.releaseLock();
-      }
-    }
-  }
+  if (syncResults.length > 0) _flushRegistryResults(props, syncResults);
 }
 
 function extractDataFromEmail(body, msg, configs) {
