@@ -256,7 +256,6 @@ git pull                  # pull the latest changes from the repo
 npm install               # only needed if package.json changed
 npm run verify:local      # must pass before pushing
 clasp push
-clasp deploy --description "Update to <version>"
 ```
 
 **macOS / Linux:**
@@ -266,18 +265,30 @@ git pull
 npm install
 npm run verify:local
 clasp push
-clasp deploy --description "Update to <version>"
 ```
 
-After deploying, open the web app and confirm the Admin Diagnostics panel no longer shows errors from the previous version.
+After `clasp push`, update the existing live Apps Script deployment:
+
+1. Open the Apps Script editor.
+2. Click **Deploy → Manage deployments**.
+3. Select the live web app deployment.
+4. Click the **Edit** pencil.
+5. Set **Version** to **New version**.
+6. Update the description if useful, then click **Deploy**.
+
+This step is required for the update to be live. `clasp push` only updates the saved project files; users keep running the old deployment until the live deployment is edited to use a new version.
+
+Do **not** click **Deploy → New deployment** for routine updates. A new deployment creates a separate deployment and may produce a different web app URL. Do **not** only rename or save the deployment without changing **Version** to **New version**; that does not move the live web app to the newly pushed code.
+
+After updating the live deployment, open the web app and confirm the Admin Diagnostics panel no longer shows errors from the previous version.
 
 > **Note:** `clasp pull` is NOT the update path. It downloads the Apps Script cloud copy into your local repo (useful for recovering manual edits) but does not apply upstream repo updates. Always use `git pull` to pull updates, then `clasp push` to send them to Apps Script.
 
 ### Will an update reset existing users or connections?
 
-No, as long as you update the **same Apps Script project**. `clasp push` and `clasp deploy` update the
-code files and deployment version; they do not wipe Script Properties, User Properties, existing
-Sheets, or user-created triggers.
+No, as long as you update the **same Apps Script project**. `clasp push` updates the code files, and
+editing the existing live deployment to use **New version** updates the deployment version. These steps
+do not wipe Script Properties, User Properties, existing Sheets, or user-created triggers.
 
 Existing connections stay in the `capture_registry` Script Property and should continue to appear and
 sync after the update. New fields added by later versions, such as last-run status or sync cursors,
@@ -303,8 +314,9 @@ Every push requires a new deployment version for users to see the update:
 
 ```powershell
 clasp push
-clasp deploy --description "Short description of change"
 ```
+
+Then open **Apps Script editor → Deploy → Manage deployments**, edit the existing live web app deployment, and change **Version** to **New version** before clicking **Deploy**.
 
 The web app URL remains the same — users do not need a new link.
 

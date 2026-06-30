@@ -157,7 +157,6 @@ git pull
 npm install              # only if package.json changed
 npm run verify:local     # must pass before pushing
 clasp push
-clasp deploy --description "Update to <version>"
 ```
 
 **macOS / Linux:**
@@ -167,10 +166,19 @@ git pull
 npm install
 npm run verify:local
 clasp push
-clasp deploy --description "Update to <version>"
 ```
 
-After deploying, hard-reload the web app (Ctrl+Shift+R / Cmd+Shift+R). The banner will disappear once the cached version check expires (up to 7 days) or when the `APP_VERSION` constant in `Code.js` matches the latest release tag.
+After `clasp push`, update the existing live deployment in the Apps Script editor:
+
+1. Click **Deploy → Manage deployments**.
+2. Select the live web app deployment.
+3. Click the **Edit** pencil.
+4. Set **Version** to **New version**.
+5. Click **Deploy**.
+
+Do not use **Deploy → New deployment** for routine updates. That creates a separate deployment and may produce a different URL. Editing the deployment but only changing its name or description also does not update the live script; **Version** must be changed to **New version**.
+
+After updating the live deployment, hard-reload the web app (Ctrl+Shift+R / Cmd+Shift+R). The banner will disappear once the cached version check expires (up to 7 days) or when the `APP_VERSION` constant in `Code.js` matches the latest release tag.
 
 ---
 
@@ -182,10 +190,13 @@ After running `clasp push`, users must receive a new deployment version before t
 
 ```powershell
 clasp push
-clasp deploy --description "Update to <version>"
 ```
 
-The web app URL does not change. Users do not need a new link — they just need to hard-reload the page (Ctrl+Shift+R / Cmd+Shift+R) after the redeploy.
+Then open **Apps Script editor → Deploy → Manage deployments**, edit the existing live web app deployment, and change **Version** to **New version**. Click **Deploy** to apply the new version.
+
+The web app URL does not change when you edit the existing deployment. Users do not need a new link — they just need to hard-reload the page (Ctrl+Shift+R / Cmd+Shift+R) after the deployment version is updated.
+
+If the old version still shows, confirm you did not create a separate **New deployment** and did not only rename or resave the existing deployment. The live deployment must point to a newly created version.
 
 **Wrong update path:** `clasp pull` downloads the Apps Script cloud copy into your local repo. It does NOT apply upstream repo updates. Always use `git pull` to get new code, then `clasp push` to send it to Apps Script. Running `clasp pull` after `git pull` will overwrite your local changes with the cloud version.
 
