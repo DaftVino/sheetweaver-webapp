@@ -2389,7 +2389,7 @@
         guideEl.innerHTML = '<strong>Next steps:</strong><ol style="margin: var(--space-1) 0 0; padding-left: var(--space-5);"><li>Open a <a href="https://github.com/DaftVino/SheetWeaver-Webapp/issues/new/choose" target="_blank" rel="noopener">GitHub Issue</a></li><li>Select all the text above and copy it manually</li><li>Describe what you were doing when the error occurred</li></ol>';
         wrapper.appendChild(note);
         wrapper.appendChild(ta);
-        wrapper.insertBefore(guideEl, closeBtn);
+        wrapper.appendChild(guideEl);
         wrapper.appendChild(closeBtn);
         document.body.appendChild(wrapper);
         ta.focus();
