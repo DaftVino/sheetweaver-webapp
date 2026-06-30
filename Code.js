@@ -400,7 +400,7 @@ function getDashboardData() {
   });
 
   const hasTrigger = checkUserTrigger();
-  return { connections: connections, activeEmail: email, hasTrigger: hasTrigger };
+  return { connections: connections, activeEmail: email, hasTrigger: hasTrigger, appVersion: APP_VERSION };
   } catch(e) {
     logDiag('ERROR', 'getDashboardData', { errorClass: e.name, message: e.message });
     throw e;

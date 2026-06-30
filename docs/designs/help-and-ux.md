@@ -246,90 +246,90 @@ Banners (welcome tip):
 ## Implementation Tasks
 Synthesized from design review findings. Run with Claude Code or Codex; checkbox as you ship.
 
-- [ ] **T1 (P1, human: ~20min / CC: ~5min)** — Help Dropdown — Add visual divider between docs links and "Report a Bug"
+- [x] **T1 (P1, human: ~20min / CC: ~5min)** — Help Dropdown — Add visual divider between docs links and "Report a Bug"
   - Surfaced by: Pass 1 (Info Architecture) — "Report a Bug" is an action, not a reference doc; mixing them loses hierarchy
   - Files: `Index.html` (help dropdown HTML + CSS)
   - Verify: dropdown shows 4 doc links → hr divider → Report a Bug, in that order
 
-- [ ] **T2 (P1, human: ~30min / CC: ~10min)** — Debug Toast — Reimplement as CSS-class-based, bottom-center, z:10500
+- [x] **T2 (P1, human: ~30min / CC: ~10min)** — Debug Toast — Reimplement as CSS-class-based, bottom-center, z:10500
   - Surfaced by: Pass 2 (Interaction States) — plan referenced `_showFallback()` inline styles; that approach conflicts with #statusToast pattern and breaks z-index coexistence
   - Files: `Index.html` (static `#debugCopiedToast` div + CSS + `showCopied()` function replacement)
   - Verify: trigger Copy Debug → toast appears bottom-center; trigger a statusToast simultaneously → both visible without overlap
 
-- [ ] **T3 (P1, human: ~10min / CC: ~3min)** — Debug Toast — Add `aria-label="Dismiss notification"` to close button
+- [x] **T3 (P1, human: ~10min / CC: ~3min)** — Debug Toast — Add `aria-label="Dismiss notification"` to close button
   - Surfaced by: Pass 6 (A11y) — `×` symbol has no accessible name; screen readers announce "times button"
   - Files: `Index.html` (toast close button HTML)
   - Verify: browser a11y inspector shows button label "Dismiss notification"
 
-- [ ] **T4 (P1, human: ~5min / CC: ~2min)** — Welcome Banner — Update copy
+- [x] **T4 (P1, human: ~5min / CC: ~2min)** — Welcome Banner — Update copy
   - Surfaced by: Pass 3 (User Journey) — "👋 New here?" is generic SaaS copy; user chose specific + honest copy
   - Files: `Index.html` (welcome banner text content)
   - Verify: banner reads "First time here? The setup takes about 2 minutes — start with the guide."
 
-- [ ] **T5 (P1, human: ~10min / CC: ~3min)** — Help Dropdown — Add `event.stopPropagation()` on button click
+- [x] **T5 (P1, human: ~10min / CC: ~3min)** — Help Dropdown — Add `event.stopPropagation()` on button click
   - Surfaced by: Pass 7 (Unresolved Decisions) — without stopPropagation, document click handler fires on the same event and re-opens the dropdown immediately after the button closes it
   - Files: `Index.html` (help dropdown toggle JS)
   - Verify: click Help to open → click Help again to close → dropdown stays closed
 
-- [ ] **T6 (P2, human: ~20min / CC: ~8min)** — Help Dropdown — Implement focus management + arrow key navigation
+- [x] **T6 (P2, human: ~20min / CC: ~8min)** — Help Dropdown — Implement focus management + arrow key navigation
   - Surfaced by: Pass 6 (A11y) — ARIA `role="menu"` pattern requires focus to land on first item on open, return to trigger on close, and support arrow key traversal
   - Files: `Index.html` (help dropdown keydown handler)
   - Verify: Tab to Help → Enter opens dropdown → focus moves to first item → arrow keys traverse → Escape closes and returns focus to Help button
 
-- [ ] **T7 (P2, human: ~10min / CC: ~3min)** — Debug Toast fallback — Fix instruction DOM order in `_showFallback` path
+- [x] **T7 (P2, human: ~10min / CC: ~3min)** — Debug Toast fallback — Fix instruction DOM order in `_showFallback` path
   - Surfaced by: Pass 7 (Unresolved Decisions) — instructions should appear after textarea, before Close button so user reads them before dismissing
   - Files: `Index.html` (`_showFallback()` function)
   - Verify: when clipboard unavailable → fallback overlay shows: note → textarea → 3-step instructions → Close button
 
-- [ ] **T8 (P1, human: ~10min / CC: ~3min)** — Help Dropdown — Add explicit Space key handler on menu items
+- [x] **T8 (P1, human: ~10min / CC: ~3min)** — Help Dropdown — Add explicit Space key handler on menu items
   - Surfaced by: Eng Review (Architecture) — `<a href>` elements do not follow links on Space natively; Space scrolls the page. ARIA `menuitem` pattern requires Space to activate the item.
   - Files: `Index.html` (help dropdown keydown handler)
   - Implementation: in the keydown listener on the dropdown container, add `case ' ': event.preventDefault(); document.activeElement.click(); break;`
   - Verify: Tab to Help → Enter → Arrow Down → Space → GitHub link opens in new tab
 
-- [ ] **T9 (P1, human: ~5min / CC: ~2min)** — Welcome Banner — Move placement inside `#step-0`
+- [x] **T9 (P1, human: ~5min / CC: ~2min)** — Welcome Banner — Move placement inside `#step-0`
   - Surfaced by: Eng Review (Architecture) — banner placed outside #step-0 remains visible during wizard steps; nextStep() only controls .step elements
   - Files: `Index.html` (welcome banner HTML position)
   - Implementation: place the banner div as first child of `#step-0`, after `#syncBannerContainer`, before `.dashboard-title-row`
   - Verify: navigate to wizard step-1 → welcome banner is NOT visible; return to step-0 → banner visible (if not yet dismissed)
 
-- [ ] **T10 (P1, human: ~5min / CC: ~2min)** — Version Label — Add at line 1203, before early returns
+- [x] **T10 (P1, human: ~5min / CC: ~2min)** — Version Label — Add at line 1203, before early returns
   - Surfaced by: Eng Review (Architecture) — loadDashboard() has early return at line 1220 for empty-connections; version update placed after that return never fires for new users
   - Files: `Index.html` (loadDashboard success handler)
   - Implementation: add version update at line 1203, immediately after `document.getElementById('activeEmail').innerText = data.activeEmail;`
   - Verify: new user with 0 connections → header shows correct version (not "v...")
 
-- [ ] **T11 (P1, human: ~5min / CC: ~3min)** — Debug Toast — Declare `_debugToastTimer` and `_showDebugToast()` at module scope
+- [x] **T11 (P1, human: ~5min / CC: ~3min)** — Debug Toast — Declare `_debugToastTimer` and `_showDebugToast()` at module scope
   - Surfaced by: Eng Review (Code Quality) — `showCopied()` is currently nested inside `copyDebugInfo()` (line 2202). Nesting the replacement would lose the timer reference on each call, breaking double-click reset.
   - Files: `Index.html` (JS module scope, near `let _toastTimer = null;` — search this string, don't rely on line numbers which will shift after earlier HTML additions)
   - Implementation: declare `let _debugToastTimer = null;` at module scope alongside `_toastTimer`. Define `function _showDebugToast() {...}` at module scope (not inside copyDebugInfo). Call `_showDebugToast()` from copyDebugInfo where `showCopied()` is currently called.
   - Verify: Copy Debug → wait 4s → Copy Debug again → toast resets to 8s timer (doesn't stack); verify second auto-dismiss fires at 8s from second click
 
-- [ ] **T12 (P1, human: ~5min / CC: ~2min)** — Welcome Banner — Change role="banner" to role="note"
+- [x] **T12 (P1, human: ~5min / CC: ~2min)** — Welcome Banner — Change role="banner" to role="note"
   - Surfaced by: Outside Voice (A11y) — role="banner" is a page-level landmark; screen readers expose it alongside the page <header>. A dismissible tip inside #step-0 is not a page banner.
   - Files: `Index.html` (welcome banner HTML)
   - Implementation: `<div role="note" id="welcomeTipBanner">` — or no explicit role (a dismiss button alone is sufficient semantics)
   - Verify: browser a11y inspector shows no spurious landmark under Landmarks panel for the tip banner
 
-- [ ] **T13 (P1, human: ~5min / CC: ~2min)** — Debug Toast Fallback — Specify insertBefore in T7 implementation
+- [x] **T13 (P1, human: ~5min / CC: ~2min)** — Debug Toast Fallback — Specify insertBefore in T7 implementation
   - Surfaced by: Outside Voice — _showFallback() uses sequential appendChild; "append" is ambiguous. Without explicit insertBefore, guide lands after Close button.
   - Files: `Index.html` (_showFallback() function)
   - Implementation: after creating `const ta = ...` and before `wrapper.appendChild(closeBtn)`, create the guide element and call `wrapper.insertBefore(guideEl, closeBtn)` — NOT `wrapper.appendChild(guideEl)`
   - Verify: clipboard unavailable → overlay order: note → textarea → 3-step guide → Close button
 
-- [ ] **T14 (P1, human: ~10min / CC: ~3min)** — Help Dropdown — Add Tab key handler that closes the menu
+- [x] **T14 (P1, human: ~10min / CC: ~3min)** — Help Dropdown — Add Tab key handler that closes the menu
   - Surfaced by: Outside Voice (A11y) — ARIA role="menu" requires Tab to close the menu, not cycle through items. <a> anchors receive Tab focus by default, violating the menu keyboard contract.
   - Files: `Index.html` (help dropdown keydown handler)
   - Implementation: in the keydown listener on the dropdown container, add `case 'Tab': closeDropdown(); break;` (where closeDropdown removes .open class and returns focus to Help button). Do NOT call `event.preventDefault()` for Tab — let focus proceed naturally after closing.
   - Verify: Help open → Tab → dropdown closes; focus moves to next focusable element after Help button
 
-- [ ] **T15 (P2, human: ~5min / CC: ~2min)** — Version Label — Add 'v?' failure state in loadDashboard failure handler
+- [x] **T15 (P2, human: ~5min / CC: ~2min)** — Version Label — Add 'v?' failure state in loadDashboard failure handler
   - Surfaced by: Outside Voice — version label stays 'v...' indefinitely on RPC failure; 'v?' distinguishes loading from failed
   - Files: `Index.html` (loadDashboard withFailureHandler, search for 'Backend Error:' to locate it — don't rely on line numbers which shift)
   - Implementation: add inside withFailureHandler: `const vl = document.getElementById('versionLabel'); if (vl) { vl.textContent = 'v?'; vl.setAttribute('aria-label', 'App version: unavailable'); }`
   - Verify: simulate getDashboardData failure (e.g., temporarily break the function name) → header shows 'v?' not 'v...'
 
-- [ ] **T16 (P2, human: ~5min / CC: ~2min)** — Version Label + Debug Toast — Replace line number pins with code context clues
+- [x] **T16 (P2, human: ~5min / CC: ~2min)** — Version Label + Debug Toast — Replace line number pins with code context clues
   - Surfaced by: Outside Voice — line numbers in T10/T11 will drift as earlier HTML additions shift the JS block
   - Files: (no code change — task tracking note only)
   - Note: when implementing T10, search for `document.getElementById('activeEmail').innerText` to find the right placement. When implementing T11, search for `let _toastTimer = null` to find the right placement. Do not rely on line numbers from this plan.
