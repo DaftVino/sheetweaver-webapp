@@ -86,20 +86,46 @@ User opens app → loadDashboard()
 
 ### Registry Structure
 
+Each entry in the `capture_registry` array represents one Gmail→Sheet connection. Fields are written at different points in the lifecycle:
+
+**Set at connection creation** (`setupSpreadsheet`):
 ```json
-[
-  {
-    "owner": "user@domain.com",
-    "label": "Ops/Invoices",
-    "tabName": "Invoices Q1",
-    "spreadsheetUrl": "https://docs.google.com/...",
-    "lastRun": "2026-01-15T10:30:00Z",
-    "paused": false
-  }
-]
+{
+  "userEmail": "user@domain.com",
+  "gmailLabel": "Ops/Invoices",
+  "tabName": "Invoices Q1",
+  "spreadsheetUrl": "https://docs.google.com/...",
+  "sheetId": 123456789,
+  "isPaused": false,
+  "initialSync": "50",
+  "lastSyncTime": null,
+  "syncCursor": null,
+  "headerConfigs": [
+    { "name": "Date Received", "pattern": "EMAIL_DATE", "delimiter": "none", "format": "date" },
+    { "name": "Message ID",    "pattern": "EMAIL_ID",   "delimiter": "none", "format": "text" },
+    { "name": "Amount",        "pattern": "Total:",     "delimiter": "newline", "format": "currency" }
+  ]
+}
 ```
 
-The registry is a single shared JSON blob. All users read and write the same property. `LockService` is used to prevent concurrent writes from corrupting it.
+**Updated after each sync run** (`recordConnectionRun` called from `_flushRegistryResults`):
+```json
+{
+  "lastRunStatus": "ok",
+  "lastRunAt": "2026-01-15T10:30:00.000Z",
+  "lastRunReportId": "a1b2c3d4",
+  "lastError": null,
+  "lastCounts": { "scanned": 12, "new": 3, "updated": 1 },
+  "lastDurationMs": 8200,
+  "lastBodyType": "plain"
+}
+```
+
+**Updated during initial bulk-sync** (`_processSingleConnection`):
+- `lastSyncTime` — Unix timestamp (seconds) of when the initial backfill completed. Once set, incremental syncs use `after:lastSyncTime - 86400` instead of the initial strategy.
+- `syncCursor` — batch offset for `initialSync: 'all'` multi-run backfills. `null` when not in progress.
+
+The registry is a single shared JSON blob stored in one Script Property. All users read and write the same key. `LockService.getScriptLock()` is acquired for all registry writes to prevent concurrent corruption.
 
 ## Frontend Architecture
 
@@ -118,8 +144,9 @@ Navigation is handled by `nextStep(n)` and `loadDashboard()`. There is no client
 
 ## Concurrency
 
-- **LockService (`getScriptLock`)** protects writes to `capture_registry` (prevents two users updating the registry simultaneously).
+- **LockService (`getScriptLock`)** protects all writes to `capture_registry`. Lock-guarded paths: `togglePauseConnection`, `deleteConnection`, `setupSpreadsheet` (registry portion), and `_flushRegistryResults` (called from `processEmails`).
 - **Per-user triggers** mean concurrent `processEmails()` calls from different users do not share a lock — each user's run is fully independent.
+- `repairConnection` delegates to `setupSpreadsheet` (which acquires its own lock internally) and therefore needs no lock of its own.
 - No locking around sheet writes; each connection writes to a distinct tab, so tab-level collisions are not possible within a single user's run.
 
 ## Scheduling
@@ -127,6 +154,13 @@ Navigation is handled by `nextStep(n)` and `loadDashboard()`. There is no client
 Each user who enables the trigger gets a `ScriptApp.newTrigger('processEmails').timeBased().everyMinutes(15)` trigger registered under their account. The trigger calls `processEmails()` which filters the registry to only that user's connections before doing any work.
 
 `checkUserTrigger()` returns whether the current user has an active trigger. `enableUserTrigger()` creates one if absent. The dashboard shows a banner prompting the user to enable their trigger if it is missing.
+
+## Admin Setup
+
+Two functions are **manual Script Editor operations** — they are not exposed via the web UI and must be run directly in the GAS Script Editor by a project owner:
+
+- **`bootstrapAdmin()`** — designates the effective user (the script owner) as admin by writing their email to the `adminEmail` Script Property. No-op if already set.
+- **`setAdminEmail(email)`** — transfers admin rights to a different email. Requires the caller to already be the current admin.
 
 ## Diagnostics
 

@@ -53,6 +53,7 @@ function isAdmin(email) {
   return admin !== '' && email.toLowerCase() === admin.toLowerCase();
 }
 
+/** Run once from the GAS Script Editor to designate the current effective user as admin. Not exposed via the web UI. */
 function bootstrapAdmin() {
   const props = PropertiesService.getScriptProperties();
   if (props.getProperty(ADMIN_EMAIL_KEY)) return { alreadySet: true };
@@ -62,6 +63,7 @@ function bootstrapAdmin() {
   return { success: true, adminEmail: effectiveEmail };
 }
 
+/** Run from the GAS Script Editor (as current admin) to transfer admin rights to another email. Not exposed via the web UI. */
 function setAdminEmail(email) {
   const caller = getActiveEmail();
   if (!isAdmin(caller)) return { success: false, error: 'Not authorized.' };
