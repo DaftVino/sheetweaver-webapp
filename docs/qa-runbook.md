@@ -128,7 +128,7 @@ Verify the install path works end-to-end from zero for a new installer.
 
 | # | Test | Expected |
 |---|------|----------|
-| 9.1 | Simulate an update: `git pull`, `npm run verify:local`, `clasp push`, `clasp deploy` | All commands succeed; web app loads the new version |
+| 9.1 | Simulate an update: `git pull`, `npm run verify:local`, `clasp push`, then Apps Script editor → **Deploy → Manage deployments** → edit live web app → **Version: New version** → **Deploy** | All commands succeed; the existing web app URL loads the new version |
 | 9.2 | After update, Admin Diagnostics panel loads normally | No new errors introduced by the update |
 | 9.3 | Existing connections still sync after update | Data continues to appear in Sheets |
 
