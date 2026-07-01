@@ -117,4 +117,4 @@ For common problems (label not found, no sheet access, trigger limits), see
 ## Need more help?
 
 - [Troubleshooting Guide](troubleshooting.md) — common errors and fixes
-- [SUPPORT.md](../SUPPORT.md) — how to reach the maintainer
+- [SUPPORT.md](../.github/SUPPORT.md) — how to reach the maintainer
