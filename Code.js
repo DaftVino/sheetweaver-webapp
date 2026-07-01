@@ -415,8 +415,8 @@ function togglePauseConnection(tabName, url) {
     if (!lock.tryLock(5000)) return { success: false, error: 'Could not acquire lock.' };
     try {
       const registry = _readRegistry(props);
-      const conn = registry.find(c => c.tabName === tabName && c.spreadsheetUrl === url);
-      if (!conn || conn.userEmail !== activeEmail) return { success: false, error: 'Not authorized.' };
+      const conn = registry.find(c => c.tabName === tabName && c.spreadsheetUrl === url && c.userEmail === activeEmail);
+      if (!conn) return { success: false, error: 'Not authorized.' };
       conn.isPaused = !conn.isPaused;
       _writeRegistry(props, registry);
     } finally {
@@ -454,9 +454,9 @@ function deleteConnection(tabName, url) {
     if (!lock.tryLock(5000)) return { success: false, error: 'Could not acquire lock.' };
     try {
       const registry = _readRegistry(props);
-      const conn = registry.find(c => c.tabName === tabName && c.spreadsheetUrl === url);
-      if (!conn || conn.userEmail !== activeEmail) return { success: false, error: 'Not authorized.' };
-      _writeRegistry(props, registry.filter(c => !(c.tabName === tabName && c.spreadsheetUrl === url)));
+      const conn = registry.find(c => c.tabName === tabName && c.spreadsheetUrl === url && c.userEmail === activeEmail);
+      if (!conn) return { success: false, error: 'Not authorized.' };
+      _writeRegistry(props, registry.filter(c => !(c.tabName === tabName && c.spreadsheetUrl === url && c.userEmail === activeEmail)));
     } finally {
       lock.releaseLock();
     }
@@ -482,9 +482,8 @@ function repairConnection(tabName, url) {
   try {
     const activeEmail = getActiveEmail();
     const registry = _readRegistry(PropertiesService.getScriptProperties());
-    const conn = registry.find(c => c.tabName === tabName && c.spreadsheetUrl === url);
+    const conn = registry.find(c => c.tabName === tabName && c.spreadsheetUrl === url && c.userEmail === activeEmail);
     if (!conn) return { success: false, error: 'Connection not found in registry.' };
-    if (conn.userEmail !== activeEmail) return { success: false, error: 'Not authorized.' };
     if (!conn.headerConfigs) {
       return { success: false, error: "This is an older connection that didn't back up its rules. Please delete it and set it up as a new capture." };
     }
@@ -498,8 +497,8 @@ function getEditConfig(tabName, url) {
   const activeEmail = getActiveEmail();
   const props = PropertiesService.getScriptProperties();
   const registry = _readRegistry(props);
-  const conn = registry.find(c => c.tabName === tabName && c.spreadsheetUrl === url);
-  if (!conn || conn.userEmail !== activeEmail) {
+  const conn = registry.find(c => c.tabName === tabName && c.spreadsheetUrl === url && c.userEmail === activeEmail);
+  if (!conn) {
     const reportId = logDiag('WARN', 'getEditConfig', { message: 'unauthorized access attempt', tabName: tabName, userEmail: activeEmail });
     return { success: false, error: 'Not authorized.', reportId: reportId };
   }
@@ -795,7 +794,11 @@ function setupSpreadsheet(labelName, tabName, targetUrl, headerConfigs, initialS
     try {
       let registry = _readRegistry(props);
       const filterTabName = originalTabName ? originalTabName : tabName;
-      registry = registry.filter(c => !(c.tabName === filterTabName && c.spreadsheetUrl === targetUrl));
+      const existing = registry.find(c => c.tabName === filterTabName && c.spreadsheetUrl === targetUrl);
+      if (existing && existing.userEmail !== activeEmail) {
+        return { success: false, error: 'A connection with this tab name already exists for another user on this sheet.' };
+      }
+      registry = registry.filter(c => !(c.tabName === filterTabName && c.spreadsheetUrl === targetUrl && c.userEmail === activeEmail));
       registry.push({
         userEmail: activeEmail,
         gmailLabel: labelName,
@@ -1028,6 +1031,7 @@ function _processSingleConnection(conn, startTime, DEADLINE_MS, CURSOR_BATCH) {
     return {
       tabName: conn.tabName,
       url: conn.spreadsheetUrl,
+      userEmail: conn.userEmail,
       syncTime: Math.floor(Date.now() / 1000),
       status: runStatus,
       counts: counts,
@@ -1047,6 +1051,7 @@ function _processSingleConnection(conn, startTime, DEADLINE_MS, CURSOR_BATCH) {
     return {
       tabName: conn.tabName,
       url: conn.spreadsheetUrl,
+      userEmail: conn.userEmail,
       syncTime: Math.floor(Date.now() / 1000),
       status: 'error',
       counts: counts,
@@ -1072,14 +1077,23 @@ function _flushRegistryResults(props, syncResults) {
   try {
     let freshRegistry = _readRegistry(props);
     freshRegistry.forEach(c => {
-      const result = syncResults.find(u => u.tabName === c.tabName && u.url === c.spreadsheetUrl);
+      const result = syncResults.find(u => u.tabName === c.tabName && u.url === c.spreadsheetUrl && u.userEmail === c.userEmail);
       if (result) {
         recordConnectionRun(c, result);
         if (result.advanceSyncTime) c.lastSyncTime = result.syncTime;
         if (result.nextCursor !== undefined) c.syncCursor = result.nextCursor;
       }
     });
-    _writeRegistry(props, freshRegistry);
+    try {
+      _writeRegistry(props, freshRegistry);
+    } catch(e) {
+      // Most likely cause: the registry blob exceeds the PropertiesService
+      // per-property size limit as connections/headerConfigs accumulate.
+      // Without this catch the exception would propagate out of processEmails()
+      // silently: every subsequent trigger run would re-scan the same window
+      // and hit the same failure with no diagnostic trail.
+      logDiag('ERROR', 'processEmails:flushWrite', { errorClass: e.name, message: e.message });
+    }
   } finally {
     lock.releaseLock();
   }
