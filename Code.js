@@ -1062,21 +1062,26 @@ function _processSingleConnection(conn, startTime, DEADLINE_MS, CURSOR_BATCH) {
 // Locked write-back: applies SyncResult data to the fresh registry and saves.
 function _flushRegistryResults(props, syncResults) {
   const lock = LockService.getScriptLock();
-  if (lock.tryLock(10000)) {
-    try {
-      let freshRegistry = _readRegistry(props);
-      freshRegistry.forEach(c => {
-        const result = syncResults.find(u => u.tabName === c.tabName && u.url === c.spreadsheetUrl);
-        if (result) {
-          recordConnectionRun(c, result);
-          if (result.advanceSyncTime) c.lastSyncTime = result.syncTime;
-          if (result.nextCursor !== undefined) c.syncCursor = result.nextCursor;
-        }
-      });
-      _writeRegistry(props, freshRegistry);
-    } finally {
-      lock.releaseLock();
-    }
+  if (!lock.tryLock(10000)) {
+    logDiag('WARN', 'processEmails:flushLock', {
+      message: 'Could not acquire lock — sync results dropped for this run',
+      tabNames: syncResults.map(function(r) { return r.tabName; })
+    });
+    return;
+  }
+  try {
+    let freshRegistry = _readRegistry(props);
+    freshRegistry.forEach(c => {
+      const result = syncResults.find(u => u.tabName === c.tabName && u.url === c.spreadsheetUrl);
+      if (result) {
+        recordConnectionRun(c, result);
+        if (result.advanceSyncTime) c.lastSyncTime = result.syncTime;
+        if (result.nextCursor !== undefined) c.syncCursor = result.nextCursor;
+      }
+    });
+    _writeRegistry(props, freshRegistry);
+  } finally {
+    lock.releaseLock();
   }
 }
 

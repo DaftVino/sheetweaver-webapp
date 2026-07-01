@@ -38,7 +38,7 @@ This design avoids a single service account bottleneck and keeps each user's dat
 
 ```
 User fills form
-  → google.script.run.verifyLabel(label)
+  → google.script.run.verifyLabelDetailed(label)
       → GmailApp.getUserLabelByName(label)
   → google.script.run.scanEmailForSuggestions(label)
       → GmailApp.search(label, 0, 10)  [read up to 10 emails]
