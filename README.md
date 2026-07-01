@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="Logo\app-logo-header.png" alt="SheetWeaver" width="360">
+  <img src="Logo\app-logo-header.png" alt="SheetWeaver" width="250">
 </p>
-
-# SheetWeaver
 
 SheetWeaver is a Google Apps Script web app that automatically extracts structured data from Gmail labels into Google Sheets, running on a 15-minute schedule with no manual intervention required.
 
