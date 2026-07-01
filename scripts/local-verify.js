@@ -220,6 +220,64 @@ function checkPureHelpers(codeSource) {
   }
 }
 
+function checkRegistryOwnership(codeSource) {
+  // Regression test for the red-team finding: setupSpreadsheet used to delete
+  // any existing registry entry matching (tabName, spreadsheetUrl) with no
+  // ownership check, letting one user silently hijack another user's
+  // connection on a shared spreadsheet by reusing the same tab name.
+  function makeSetupCtx(activeEmail, registry) {
+    const propStore = { capture_registry: JSON.stringify(registry) };
+    const range = {
+      clearContent: () => range, clearNote: () => range,
+      setValues: () => {}, setNotes: () => {}, setFontWeight: () => {},
+      setNumberFormat: () => {}
+    };
+    const sheet = {
+      getMaxColumns: () => 10, getMaxRows: () => 100,
+      getRange: () => range, autoResizeColumns: () => {}, getSheetId: () => 1
+    };
+    return vm.createContext({
+      console: { log: () => {} },
+      Session: { getActiveUser: () => ({ getEmail: () => activeEmail }), getEffectiveUser: () => ({ getEmail: () => activeEmail }) },
+      Utilities: { getUuid: () => 'cccccccc-0000-0000-0000-000000000000' },
+      PropertiesService: {
+        getScriptProperties: () => ({
+          getProperty: k => propStore[k] || null,
+          setProperty: (k, v) => { propStore[k] = v; },
+          deleteProperty: k => { delete propStore[k]; }
+        }),
+        getUserProperties: () => ({ getProperty: () => null, setProperty: () => {} })
+      },
+      LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) },
+      ScriptApp: { getProjectTriggers: () => [], AuthMode: { FULL: 'FULL' }, getAuthorizationInfo: () => ({ getAuthorizationStatus: () => ({ toString: () => 'NOT_REQUIRED' }), getAuthorizationUrl: () => null }), newTrigger: () => ({ timeBased: () => ({ everyMinutes: () => ({ create: () => {} }) }) }) },
+      SpreadsheetApp: { openByUrl: () => ({ getSheetByName: () => sheet, insertSheet: () => sheet }) },
+      GmailApp: { search: () => [], getUserLabelByName: () => ({}), getUserLabels: () => [] },
+      HtmlService: { createHtmlOutputFromFile: () => ({ setTitle: () => ({}), setXFrameOptionsMode: () => ({}) }), XFrameOptionsMode: { ALLOWALL: 'ALLOWALL' } },
+      _propStore: propStore
+    });
+  }
+
+  try {
+    const victimEntry = {
+      userEmail: 'victim@example.com', gmailLabel: 'VictimLabel', tabName: 'Shared',
+      spreadsheetUrl: 'https://fake/shared-sheet', sheetId: 1, isPaused: false,
+      initialSync: '50', lastSyncTime: null, headerConfigs: [{ name: 'Subject', pattern: 'EMAIL_ID' }]
+    };
+    const ctx = makeSetupCtx('attacker@example.com', [victimEntry]);
+    vm.runInContext(codeSource, ctx);
+    const result = vm.runInContext(
+      "setupSpreadsheet('AttackerLabel', 'Shared', 'https://fake/shared-sheet', [{name:'Subject',pattern:'EMAIL_ID'}], '50', null, true)",
+      ctx
+    );
+    check('setupSpreadsheet rejects hijacking another user\'s tab-name/URL combo', result && result.success === false);
+    const registryAfter = JSON.parse(ctx._propStore.capture_registry);
+    check('setupSpreadsheet leaves the victim\'s entry untouched on a rejected hijack attempt',
+      registryAfter.length === 1 && registryAfter[0].userEmail === 'victim@example.com' && registryAfter[0].gmailLabel === 'VictimLabel');
+  } catch (error) {
+    failures.push(`registry ownership checks: ${error.message}`);
+  }
+}
+
 function checkIsAdmin(codeSource) {
   function makeCtx(adminProperty) {
     return vm.createContext({
@@ -337,6 +395,7 @@ checkPureHelpers(codeSource);
 checkPhase3Helpers(codeSource);
 checkIsAdmin(codeSource);
 checkAdminUnauthorizedShape(codeSource);
+checkRegistryOwnership(codeSource);
 
 const htmlSource = read('Index.html');
 const inlineScripts = extractInlineScripts(htmlSource);
