@@ -20,7 +20,7 @@ Verify the install path works end-to-end from zero for a new installer.
 | 1.2 | Run `bootstrapAdmin` in the Apps Script editor | Runs without error; no output means it set the admin property |
 | 1.3 | Open the web app as the admin account | Dashboard loads; Admin Diagnostics section is visible |
 | 1.4 | Open the web app as a second (non-admin) account | Dashboard loads; Admin Diagnostics section is NOT visible |
-| 1.5 | Attempt to call `getAdminDiagnostics` as a non-admin (via Apps Script editor Run) | Returns `{authorized: false}` |
+| 1.5 | Attempt to call `getAdminDiagnostics` as a non-admin (via Apps Script editor Run) | Returns `{success: false, error: 'Not authorized.'}` |
 | 1.6 | Attempt to run `bootstrapAdmin` again as the admin | No-op; admin email unchanged |
 | 1.7 | Attempt to run `bootstrapAdmin` as a non-admin in the web-app context | No-op; admin email unchanged (admin-takeover guard) |
 | 1.8 | Grep deployed sources for any personal email address, owner Sheet ID, or original `scriptId` | No matches |

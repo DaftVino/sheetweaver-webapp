@@ -220,6 +220,57 @@ function checkPureHelpers(codeSource) {
   }
 }
 
+function checkIsAdmin(codeSource) {
+  function makeCtx(adminProperty) {
+    return vm.createContext({
+      console: { log: () => {} },
+      PropertiesService: {
+        getScriptProperties: () => ({ getProperty: () => adminProperty, setProperty: () => {}, deleteProperty: () => {} }),
+        getUserProperties: () => ({ getProperty: () => null, setProperty: () => {} })
+      },
+      Session: { getActiveUser: () => ({ getEmail: () => '' }), getEffectiveUser: () => ({ getEmail: () => '' }) },
+      Utilities: { getUuid: () => 'bbbbbbbb-0000-0000-0000-000000000000' },
+      ScriptApp: { getProjectTriggers: () => [], AuthMode: { FULL: 'FULL' }, getAuthorizationInfo: () => ({ getAuthorizationStatus: () => ({ toString: () => 'NOT_REQUIRED' }), getAuthorizationUrl: () => null }), newTrigger: () => ({ timeBased: () => ({ everyMinutes: () => ({ create: () => {} }) }) }) },
+      SpreadsheetApp: {}, LockService: {}, GmailApp: {},
+      HtmlService: { createHtmlOutputFromFile: () => ({ setTitle: () => ({}), setXFrameOptionsMode: () => ({}) }), XFrameOptionsMode: { ALLOWALL: 'ALLOWALL' } }
+    });
+  }
+
+  try {
+    const ctxMatch = makeCtx('Admin@Example.com');
+    vm.runInContext(codeSource, ctxMatch);
+    check('isAdmin exact-case match returns true', vm.runInContext("isAdmin('Admin@Example.com')", ctxMatch) === true);
+    check('isAdmin is case-insensitive', vm.runInContext("isAdmin('admin@example.com')", ctxMatch) === true);
+    check('isAdmin rejects non-matching email', vm.runInContext("isAdmin('someone-else@example.com')", ctxMatch) === false);
+
+    const ctxEmpty = makeCtx('');
+    vm.runInContext(codeSource, ctxEmpty);
+    check('isAdmin returns false when no admin is set', vm.runInContext("isAdmin('admin@example.com')", ctxEmpty) === false);
+  } catch (error) {
+    failures.push(`isAdmin checks: ${error.message}`);
+  }
+}
+
+function checkLocalStorageConvention(htmlSrc) {
+  // CLAUDE.md mandates all localStorage access goes through _lsGet/_lsSet
+  // (their try/catch wrappers keep Safari private-mode SecurityErrors from
+  // throwing). This guards against a future call site bypassing them.
+  const directCalls = (htmlSrc.match(/localStorage\.(getItem|setItem)\s*\(/g) || []).length;
+  const wrapperDefinitions = (htmlSrc.match(/function _ls(Get|Set)\([^)]*\)\s*\{[^}]*localStorage\.(getItem|setItem)/g) || []).length;
+  check('localStorage accessed only via _lsGet/_lsSet wrappers', directCalls === wrapperDefinitions,
+    `found ${directCalls} localStorage.getItem/setItem call(s), expected ${wrapperDefinitions} (inside the wrapper definitions only)`);
+}
+
+function checkAdminUnauthorizedShape(codeSource) {
+  // loadAdminPanel (Index.html) branches on `.success === false`, not the old
+  // `{authorized: false}` shape — a regression here silently breaks the admin panel.
+  const unauthorizedShapePattern = /if\s*\(!isAdmin\(caller\)\)\s*return\s*\{\s*success:\s*false,\s*error:/;
+  const matches = codeSource.match(/if\s*\(!isAdmin\(caller\)\)\s*return\s*\{[^}]*\}/g) || [];
+  check('getAdminDiagnostics/checkForUpdates return {success:false,error:...} on unauthorized',
+    matches.length >= 2 && matches.every(m => unauthorizedShapePattern.test(m)),
+    `expected 2 unauthorized guards using {success:false,error:...}, found: ${JSON.stringify(matches)}`);
+}
+
 function checkPhase4Helpers(htmlSrc) {
   // Verify no user-data values appear inside onclick= attribute strings
   // These patterns were the stored-XSS vectors before Phase 4
@@ -284,6 +335,8 @@ const codeSource = read('Code.js');
 checkScriptSyntax('Code.js', codeSource);
 checkPureHelpers(codeSource);
 checkPhase3Helpers(codeSource);
+checkIsAdmin(codeSource);
+checkAdminUnauthorizedShape(codeSource);
 
 const htmlSource = read('Index.html');
 const inlineScripts = extractInlineScripts(htmlSource);
@@ -292,6 +345,7 @@ inlineScripts.forEach((script, index) => {
   checkScriptSyntax(`Index.html <script #${index + 1}>`, script);
 });
 checkPhase4Helpers(htmlSource);
+checkLocalStorageConvention(htmlSource);
 
 // Phase 4 (branding): branding presence checks
 check('Phase 4 (branding): Index.html contains app-logo img', htmlSource.includes('class="app-logo"'));

@@ -513,7 +513,8 @@
       @media (max-width: 260px) { .help-dropdown { min-width: calc(100vw - var(--space-4)); } }
       .help-menu.open .help-dropdown { display: block; }
       .help-dropdown a[role="menuitem"] { display: flex; align-items: center; min-height: 44px; padding: var(--space-2) var(--space-3); color: var(--text-main); text-decoration: none; }
-      .help-dropdown a[role="menuitem"]:hover, .help-dropdown a[role="menuitem"]:focus { background: var(--bg-subtle-hover); outline: none; }
+      .help-dropdown a[role="menuitem"]:hover { background: var(--bg-subtle-hover); }
+      .help-dropdown a[role="menuitem"]:focus-visible { background: var(--bg-subtle-hover); outline: 2px solid var(--primary); outline-offset: -2px; }
       .help-dropdown hr { margin: var(--space-1) 0; border: none; border-top: 1px solid var(--border); }
 
       /* Version label */
@@ -872,14 +873,20 @@
         users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'
       };
       // Build a status cell span: icon-only (role=img + aria-label) or icon + visible text
+      // label/opts.text are attribute/HTML-escaped here so this stays safe even if a future
+      // caller ever passes connection-derived text instead of the current hardcoded literals.
+      function _escapeHtml(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      }
       function statusIcon(type, label, opts) {
         opts = opts || {};
+        var safeLabel = _escapeHtml(label);
         var style = opts.style ? ' style="' + opts.style + '"' : '';
         if (opts.text) {
-          return '<span title="' + label + '"' + style + '>' + STATUS_SVG[type] +
-            '<span class="status-text">' + opts.text + '</span></span>';
+          return '<span title="' + safeLabel + '"' + style + '>' + STATUS_SVG[type] +
+            '<span class="status-text">' + _escapeHtml(opts.text) + '</span></span>';
         }
-        return '<span role="img" aria-label="' + label + '" title="' + label + '"' + style + '>' + STATUS_SVG[type] + '</span>';
+        return '<span role="img" aria-label="' + safeLabel + '" title="' + safeLabel + '"' + style + '>' + STATUS_SVG[type] + '</span>';
       }
 
       // Client-side debug ring buffer (last 15 entries)
@@ -1024,7 +1031,7 @@
         if (type === 'error') {
           const closeBtn = document.createElement('button');
           closeBtn.className = 'toast-close';
-          closeBtn.setAttribute('aria-label', 'Dismiss');
+          closeBtn.setAttribute('aria-label', 'Dismiss notification');
           closeBtn.textContent = '×';
           closeBtn.onclick = function() { el.className = ''; clearTimeout(_toastTimer); };
           el.appendChild(closeBtn);
