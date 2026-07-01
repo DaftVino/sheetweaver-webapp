@@ -788,26 +788,28 @@ function setupSpreadsheet(labelName, tabName, targetUrl, headerConfigs, initialS
     const props = PropertiesService.getScriptProperties();
     const sheetId = sheet.getSheetId();
     const lock = LockService.getScriptLock();
-    if (lock.tryLock(5000)) {
-      try {
-        let registry = _readRegistry(props);
-        const filterTabName = originalTabName ? originalTabName : tabName;
-        registry = registry.filter(c => !(c.tabName === filterTabName && c.spreadsheetUrl === targetUrl));
-        registry.push({
-          userEmail: activeEmail,
-          gmailLabel: labelName,
-          tabName: tabName,
-          spreadsheetUrl: targetUrl,
-          sheetId: sheetId,
-          isPaused: false,
-          initialSync: initialSync || '50',
-          lastSyncTime: null,
-          headerConfigs: headerConfigs
-        });
-        _writeRegistry(props, registry);
-      } finally {
-        lock.releaseLock();
-      }
+    if (!lock.tryLock(5000)) {
+      const reportId = logDiag('WARN', 'setupSpreadsheet:lock', { message: 'Could not acquire lock', labelName: labelName, tabName: tabName });
+      return { success: false, error: 'Could not acquire lock, please retry.', reportId: reportId };
+    }
+    try {
+      let registry = _readRegistry(props);
+      const filterTabName = originalTabName ? originalTabName : tabName;
+      registry = registry.filter(c => !(c.tabName === filterTabName && c.spreadsheetUrl === targetUrl));
+      registry.push({
+        userEmail: activeEmail,
+        gmailLabel: labelName,
+        tabName: tabName,
+        spreadsheetUrl: targetUrl,
+        sheetId: sheetId,
+        isPaused: false,
+        initialSync: initialSync || '50',
+        lastSyncTime: null,
+        headerConfigs: headerConfigs
+      });
+      _writeRegistry(props, registry);
+    } finally {
+      lock.releaseLock();
     }
 
     let triggerEnabled = false;
