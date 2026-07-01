@@ -31,10 +31,21 @@ refinements, a server-side refactor pass, and security/robustness hardening.
 - **`_showFallback` crash** — `insertBefore` failed when the close button had no rendered sibling;
   the close button is now appended before positioning.
 - Mobile viewport meta tag is now emitted server-side in `doGet` so small screens render correctly.
+- **`setupSpreadsheet` no longer reports success when it silently failed to save** — a script-lock
+  timeout used to be swallowed; it now returns an error so the user can retry.
+- A scheduled sync run that couldn't acquire the registry lock used to vanish with no record of
+  what happened; it's now logged to Admin Diagnostics.
+- Help menu items and the connection-error toast's close button now show a visible keyboard focus
+  outline and a consistent "Dismiss notification" label.
 
 ### Security
 - All client-side string-to-DOM paths converted from template literals to explicit string
   concatenation, removing template-literal interpolation as an injection surface.
+- **Connection hijack via shared spreadsheets** — if two users on the same shared spreadsheet
+  reused the same tab name, one user's setup could silently delete and replace the other's saved
+  connection (losing their capture rules), and a scheduled sync run could write one user's results
+  onto the other's connection. Every connection-write path now confirms ownership before touching
+  a registry entry.
 
 [2.0.5]: https://github.com/DaftVino/SheetWeaver-Webapp/releases/tag/v2.0.5
 
