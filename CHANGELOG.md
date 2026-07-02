@@ -47,7 +47,7 @@ refinements, a server-side refactor pass, and security/robustness hardening.
   onto the other's connection. Every connection-write path now confirms ownership before touching
   a registry entry.
 
-[2.0.5]: https://github.com/DaftVino/SheetWeaver-Webapp/releases/tag/v2.0.5
+[2.0.5]: https://github.com/DaftVino/sheetweaver-webapp/releases/tag/v2.0.5
 
 ## [2.0.0] - 2026-06-28
 
@@ -99,4 +99,4 @@ history to diff against.
 - `getDebugSnapshot()` is caller-scoped — no cross-user data exposure.
 - DOM updates use `textContent` (no template-literal injection in modal content).
 
-[2.0.0]: https://github.com/DaftVino/SheetWeaver-Webapp/releases/tag/v2.0.0
+[2.0.0]: https://github.com/DaftVino/sheetweaver-webapp/releases/tag/v2.0.0

@@ -24,7 +24,7 @@ function doGet() {
       // Must be set server-side: HtmlService ignores <meta> tags placed in the file's <head>.
       // Without this the mobile layout renders at desktop width and looks tiny on phones.
       .addMetaTag('viewport', 'width=device-width, initial-scale=1')
-      .setFaviconUrl('https://raw.githubusercontent.com/DaftVino/SheetWeaver-Webapp/main/Logo/Flavicon/favicon-32x32.png')
+      .setFaviconUrl('https://raw.githubusercontent.com/DaftVino/sheetweaver-webapp/main/Logo/Flavicon/favicon-32x32.png')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
@@ -41,7 +41,7 @@ const DIAG_MAX = 50;
 
 // Update-check endpoint — replace OWNER/REPO when the repo is public.
 // The app handles fetch failures silently so a placeholder URL is safe.
-const VERSION_ENDPOINT_URL = 'https://api.github.com/repos/DaftVino/SheetWeaver-Webapp/releases/latest';
+const VERSION_ENDPOINT_URL = 'https://api.github.com/repos/DaftVino/sheetweaver-webapp/releases/latest';
 const UPDATE_CHECK_RESULT_KEY = 'update_check_result';
 const UPDATE_CHECK_TS_KEY = 'update_check_ts';
 const UPDATE_CHECK_TTL_MS = 7 * 24 * 60 * 60 * 1000;

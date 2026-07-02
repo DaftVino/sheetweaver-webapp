@@ -105,7 +105,7 @@ turn it back on.
    failed.
 2. Click **Copy Debug** in the top-right corner. This copies your setup and recent
    errors.
-3. Open a [GitHub Issue](https://github.com/DaftVino/SheetWeaver-Webapp/issues/new/choose)
+3. Open a [GitHub Issue](https://github.com/DaftVino/sheetweaver-webapp/issues/new/choose)
    and paste in the copied text.
 4. Say what you were doing when the error happened.
 
