@@ -54,7 +54,7 @@ Use this path if you are installing the app for the first time and do not alread
 
 ```powershell
 git clone <repo-url>
-cd SheetWeaver-Webapp
+cd sheetweaver-webapp
 npm install
 ```
 
@@ -62,7 +62,7 @@ npm install
 
 ```bash
 git clone <repo-url>
-cd SheetWeaver-Webapp
+cd sheetweaver-webapp
 npm install
 ```
 
