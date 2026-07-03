@@ -282,6 +282,21 @@
           animation-duration: 0.01ms !important;
         }
       }
+
+      /* Loom C: success-screen weave animation overlay. #successTitle is visible by
+         default (edit-save, direct step-3 display); .weave-pending is applied by JS
+         ONLY right before a new-connection animation runs, and is always removed by
+         runWeave() itself (success ending, error catch, and reduced-motion paths all
+         remove it) — the hidden state is never left stranded. */
+      #successTitle.weave-pending { opacity: 0; transition: opacity 500ms ease; }
+      #weaveOverlay { position: fixed; inset: 0; pointer-events: none; z-index: 9000; }
+      #weaveOverlay path.thread { stroke: var(--thread); stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+      #weaveOverlay line.merged { stroke: var(--thread); stroke-linecap: round; vector-effect: non-scaling-stroke; }
+      #weaveOverlay circle.burst { fill: var(--thread); }
+      body.theme-nes #weaveOverlay path.thread,
+      body.theme-nes #weaveOverlay line.merged { stroke-linecap: square; }
+      #weaveDots { position: fixed; inset: 0; pointer-events: none; z-index: -1; background-image: radial-gradient(rgba(255,255,255,0.055) 1.5px, transparent 1.5px); background-size: 24px 24px; opacity: 0; }
+      #weaveCar { position: fixed; left: 0; top: 0; pointer-events: none; z-index: 9000; font-size: 22px; line-height: 1; }
       .container {
         max-width: 1050px;
         margin: 0 auto;
@@ -423,6 +438,11 @@
       .dashboard-table th[aria-sort="descending"] .sort-icon { opacity: 1; }
       .dashboard-table th[aria-sort="ascending"] .sort-icon::after { content: "\25B2"; }
       .dashboard-table th[aria-sort="descending"] .sort-icon::after { content: "\25BC"; }
+
+      /* Loom B: quiet ambient status line below the connections table. */
+      .loom-status-footer { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-3); padding: 2px var(--space-1); font-size: var(--font-sm); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+      .loom-status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--thread); box-shadow: 0 0 4px 1px var(--thread); flex-shrink: 0; }
+      body.theme-nes .loom-status-dot { border-radius: 0; box-shadow: none; }
 
       .alert-row { background-color: var(--danger-bg) !important; }
       .alert-row > td:first-child { border-left: 4px solid var(--danger); }
@@ -759,6 +779,8 @@
           </tbody>
         </table>
 
+        <div id="loomStatusFooter" class="loom-status-footer" style="display:none;"></div>
+
         <div id="adminPanel" style="display:none;" class="admin-panel">
           <div class="admin-panel-header">
             <h3 class="admin-panel-title">Admin Diagnostics</h3>
@@ -862,7 +884,7 @@
       </div>
 
       <div id="step-3" class="step">
-        <h3 style="color: var(--success-text);">The Loom Is Strung!</h3>
+        <h3 id="successTitle" style="color: var(--success-text);">The Loom Is Strung!</h3>
         <p>Your configuration rules have been saved successfully.</p>
         
         <div class="info-box neutral-box">
@@ -1228,6 +1250,59 @@
         }
       }
 
+      // Loom B: quiet ambient status line — next-weave countdown + lifetime rows-woven
+      // count. Scoped to the current user's own active connections (mirrors the sync
+      // banner's ownership scoping, since hasTrigger is per-user).
+      function _renderLoomFooter(data) {
+        const el = document.getElementById('loomStatusFooter');
+        const owned = data.connections.filter(c => c.isOwner && !c.isPaused);
+        if (owned.length === 0) {
+          el.style.display = 'none';
+          el.innerHTML = '';
+          return;
+        }
+
+        // AC #8: guard against an old server / cached client mismatch during a
+        // deploy window — hide only the count segment, never the whole footer.
+        const hasCount = typeof data.totalRowsWoven === 'number';
+        const countSuffix = hasCount ? (' · ' + data.totalRowsWoven.toLocaleString() + ' rows woven') : '';
+
+        let text;
+        if (!data.hasTrigger) {
+          text = 'The loom is resting — start Auto-Weave to resume';
+        } else {
+          const runTimes = owned
+            .map(function(c) { return c.lastRunAt ? new Date(c.lastRunAt).getTime() : null; })
+            .filter(function(t) { return t !== null && !isNaN(t); });
+          if (runTimes.length === 0) {
+            text = 'Awaiting first weave';
+          } else {
+            // Piggybacked from the server (single source of truth: TRIGGER_INTERVAL_MINUTES
+            // in Code.js) rather than hardcoded here, so the two can never drift. Falls back
+            // to 15 for an old server / cached client mismatch during a deploy window.
+            const intervalMs = (typeof data.triggerIntervalMinutes === 'number' ? data.triggerIntervalMinutes : 15) * 60 * 1000;
+            const nextWeaveAt = Math.max.apply(null, runTimes) + intervalMs;
+            const now = Date.now();
+            if (now > nextWeaveAt) {
+              text = 'Weaving soon' + countSuffix;
+            } else {
+              const minsLeft = Math.max(1, Math.ceil((nextWeaveAt - now) / 60000));
+              text = 'Next weave in ~' + minsLeft + ' min' + countSuffix;
+            }
+          }
+        }
+
+        el.innerHTML = '';
+        const dot = document.createElement('span');
+        dot.className = 'loom-status-dot';
+        dot.setAttribute('aria-hidden', 'true');
+        el.appendChild(dot);
+        const label = document.createElement('span');
+        label.textContent = text;
+        el.appendChild(label);
+        el.style.display = 'flex';
+      }
+
       function _buildConnectionRow(conn) {
         const tr = document.createElement('tr');
         const hasAlert = conn.isOwner && (!conn.gmailActive || !conn.sheetActive || conn.accessDenied);
@@ -1391,6 +1466,7 @@
             if (vl && data.appVersion) { vl.textContent = 'v' + data.appVersion; vl.setAttribute('aria-label', 'App version: v' + data.appVersion); }
             const hasOwnedConnections = data.connections.some(c => c.isOwner && !c.isPaused);
             _renderSyncBanner(data.hasTrigger, hasOwnedConnections);
+            _renderLoomFooter(data);
 
             const tbody = document.getElementById('dashboardBody');
             tbody.innerHTML = '';
@@ -1640,6 +1716,17 @@
       // SETUP LOGIC
       // ==========================================
       function nextStep(stepNumber) {
+        // Adversarial review finding: navigating away from step-3 (e.g. "Return
+        // to the Loom" clicked mid-animation) left the weave overlay/sparks/car
+        // drawing on top of the destination step. Tear down ONLY when actually
+        // leaving step-3 for elsewhere — never on entry to step-3 itself, which
+        // would strip the .weave-pending class saveConfiguration() just applied
+        // right before nextStep(3), causing a flash of the title before the
+        // weave animation even starts.
+        const step3El = document.getElementById('step-3');
+        const leavingStep3 = step3El && step3El.classList.contains('active') && stepNumber !== 3;
+        if (leavingStep3 && typeof _weaveTeardown === 'function') _weaveTeardown();
+
         document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
         document.getElementById('step-' + stepNumber).classList.add('active');
 
@@ -2067,6 +2154,225 @@
         }
       }
 
+      // Loom C: thread-weave animation on the wizard success screen. Fires once per
+      // NEW connection created (never on edit-saves). Ported from the finalized
+      // choreography in design/mockups/loom-weave-mockup.html (visual source of
+      // truth — this is the portable core with mockup-only slider/panel wiring
+      // removed and fixed values substituted for the spec's final decided numbers).
+      var _weaveCleanupTimers = [];
+      function _weaveClearTimers() {
+        _weaveCleanupTimers.forEach(clearTimeout);
+        _weaveCleanupTimers = [];
+      }
+      // Tears down any in-flight weave (timers + DOM nodes) and reveals the
+      // title. Called both at the start of a fresh runWeave() (double-fire
+      // guard) and whenever the user navigates away from step-3 mid-animation
+      // (nextStep()) — without the latter, "Return to the Loom" clicked during
+      // the ~2s animation left orphaned overlay/spark/car nodes drawing on top
+      // of the dashboard (adversarial review finding).
+      function _weaveTeardown() {
+        _weaveClearTimers();
+        ['weaveOverlay', 'weaveDots', 'weaveCar'].forEach(function(id) {
+          var stale = document.getElementById(id);
+          if (stale && stale.parentNode) stale.parentNode.removeChild(stale);
+        });
+        var title = document.getElementById('successTitle');
+        if (title) title.classList.remove('weave-pending');
+      }
+      function runWeave() {
+        var title = document.getElementById('successTitle');
+        try {
+          // Double-fire guard: if a prior run is still in flight (two new
+          // connections created back-to-back), tear it down before starting a
+          // fresh one rather than letting two overlays run concurrently.
+          _weaveTeardown();
+
+          if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            title.classList.remove('weave-pending');
+            return;
+          }
+
+          var vw = window.innerWidth, vh = window.innerHeight;
+          var A = 10, W = 120;              // amplitude, wavelength (px)
+          var spanPct = 25;                 // % of viewport width traveled
+          var drawMs = 1000, bulgeMs = 350, snapMs = 260, plumpMs = 200;
+          var bulgeScale = 1.5, mergedWidth = 5;
+          var isNes = document.body.classList.contains('theme-nes');
+          var holdMs = isNes ? 750 : 0;
+
+          var tr = title.getBoundingClientRect();
+          var cx = tr.left + tr.width / 2;
+          var y0 = tr.top + tr.height / 2;
+          var spanPx = vw * (spanPct / 100);
+          var x0 = cx - spanPx / 2;
+          var x1 = cx + spanPx / 2;
+
+          var svgNS = 'http://www.w3.org/2000/svg';
+          var svg = document.createElementNS(svgNS, 'svg');
+          svg.id = 'weaveOverlay';
+          svg.setAttribute('viewBox', '0 0 ' + vw + ' ' + vh);
+          svg.setAttribute('width', vw); svg.setAttribute('height', vh);
+          svg.setAttribute('aria-hidden', 'true');
+
+          var waves = document.createElementNS(svgNS, 'g');
+          waves.style.transformOrigin = '0px ' + y0 + 'px';
+          svg.appendChild(waves);
+
+          function waveD(sign, fromRight) {
+            var d = '', step = 2, x, y;
+            if (!fromRight) {
+              for (x = x0; x <= x1; x += step) {
+                y = y0 - sign * A * Math.cos((x - x0) / W * 2 * Math.PI);
+                d += (x === x0 ? 'M' : 'L') + x.toFixed(1) + ' ' + y.toFixed(1);
+              }
+            } else {
+              for (x = x1; x >= x0; x -= step) {
+                y = y0 - sign * A * Math.cos((x - x0) / W * 2 * Math.PI);
+                d += (x === x1 ? 'M' : 'L') + x.toFixed(1) + ' ' + y.toFixed(1);
+              }
+            }
+            return d;
+          }
+          var pathA = document.createElementNS(svgNS, 'path');
+          pathA.setAttribute('class', 'thread');
+          pathA.setAttribute('d', waveD(1, false));
+          var pathB = document.createElementNS(svgNS, 'path');
+          pathB.setAttribute('class', 'thread');
+          pathB.setAttribute('d', waveD(-1, true));
+          waves.appendChild(pathA);
+          waves.appendChild(pathB);
+
+          var merged = document.createElementNS(svgNS, 'line');
+          merged.setAttribute('class', 'merged');
+          merged.setAttribute('x1', x0); merged.setAttribute('y1', y0);
+          merged.setAttribute('x2', x1); merged.setAttribute('y2', y0);
+          merged.setAttribute('stroke-width', 2);
+          merged.style.opacity = '0';
+          svg.appendChild(merged);
+
+          document.body.appendChild(svg);
+
+          var dots = document.createElement('div');
+          dots.id = 'weaveDots';
+          document.body.appendChild(dots);
+          dots.getBoundingClientRect();
+          dots.style.transition = 'opacity ' + drawMs + 'ms ease';
+          dots.style.opacity = '0.75';
+
+          var car = null;
+
+          function cleanup() {
+            _weaveTeardown();
+          }
+          // Hard fallback: guarantees removal even if a tab-backgrounded run
+          // throttles the choreography timers below (Eng review finding).
+          _weaveCleanupTimers.push(setTimeout(cleanup, 5000));
+
+          [pathA, pathB].forEach(function(p) {
+            var len = p.getTotalLength();
+            p.style.strokeDasharray = len;
+            p.style.strokeDashoffset = len;
+          });
+          svg.getBoundingClientRect();
+          [pathA, pathB].forEach(function(p) {
+            p.style.transition = 'stroke-dashoffset ' + drawMs + 'ms ease';
+            p.style.strokeDashoffset = '0';
+          });
+
+          _weaveCleanupTimers.push(setTimeout(function() {
+            waves.style.transition = 'transform ' + bulgeMs + 'ms cubic-bezier(0.34, 1.2, 0.64, 1)';
+            waves.style.transform = 'scale(1, ' + bulgeScale + ')';
+          }, drawMs));
+
+          _weaveCleanupTimers.push(setTimeout(function() {
+            waves.style.transition = 'transform ' + snapMs + 'ms cubic-bezier(0.8, 0, 1, 1)';
+            waves.style.transform = 'scale(1, 0.01)';
+          }, drawMs + bulgeMs));
+
+          _weaveCleanupTimers.push(setTimeout(function() {
+            waves.style.opacity = '0';
+            merged.style.opacity = '1';
+            merged.getBoundingClientRect();
+            merged.style.transition = 'stroke-width ' + plumpMs + 'ms cubic-bezier(0.34, 1.3, 0.64, 1)';
+            merged.setAttribute('stroke-width', mergedWidth);
+          }, drawMs + bulgeMs + snapMs));
+
+          var tEnd = drawMs + bulgeMs + snapMs + plumpMs;
+          var tDone;
+
+          if (isNes) {
+            var fadeMs = 180;
+            var carT = holdMs + fadeMs;
+            var lagMs = carT * Math.min(1, 100 / (x1 - x0));
+            _weaveCleanupTimers.push(setTimeout(function() {
+              car = document.createElement('div');
+              car.id = 'weaveCar';
+              car.textContent = '🏎️';
+              car.setAttribute('aria-hidden', 'true');
+              var carY = y0 - 23;
+              var lineLen = merged.getTotalLength();
+              car.style.transform = 'translate(' + (x1 - 11) + 'px,' + carY + 'px)';
+              document.body.appendChild(car);
+              car.getBoundingClientRect();
+              car.style.transition = 'transform ' + carT + 'ms linear, opacity ' + (carT / 2) + 'ms linear';
+              car.style.transform = 'translate(' + (x0 - 26) + 'px,' + carY + 'px)';
+              _weaveCleanupTimers.push(setTimeout(function() { car.style.opacity = '0'; }, carT / 2));
+              merged.style.strokeDasharray = lineLen + ' ' + lineLen;
+              merged.getBoundingClientRect();
+              merged.style.transition = 'stroke-dasharray ' + carT + 'ms linear ' + lagMs + 'ms';
+              merged.style.strokeDasharray = '0 ' + lineLen;
+              dots.style.transition = 'opacity ' + carT + 'ms ease';
+              dots.style.opacity = '0';
+              _weaveCleanupTimers.push(setTimeout(function() {
+                if (title) title.classList.remove('weave-pending');
+              }, carT + lagMs + 100));
+            }, tEnd));
+            tDone = tEnd + carT + lagMs + 150;
+          } else {
+            var tCollapse = 450, tBurst = 340;
+            var SPARKS = 9, sparks = [];
+            for (var s = 0; s < SPARKS; s++) {
+              var sp = document.createElementNS(svgNS, 'circle');
+              sp.setAttribute('class', 'burst');
+              sp.setAttribute('cx', cx); sp.setAttribute('cy', y0);
+              sp.setAttribute('r', s % 2 ? 2 : 2.8);
+              sp.style.opacity = '0';
+              svg.appendChild(sp);
+              sparks.push(sp);
+            }
+            _weaveCleanupTimers.push(setTimeout(function() {
+              merged.style.transformOrigin = cx + 'px ' + y0 + 'px';
+              merged.style.transition = 'transform ' + tCollapse + 'ms cubic-bezier(0.55, 0, 0.85, 0.4)';
+              merged.style.transform = 'scale(0.004, 1)';
+              dots.style.transition = 'opacity ' + (tCollapse + tBurst) + 'ms ease';
+              dots.style.opacity = '0';
+            }, tEnd + holdMs));
+            _weaveCleanupTimers.push(setTimeout(function() {
+              merged.style.opacity = '0';
+              var spread = Math.max(tr.width, 120);
+              sparks.forEach(function(sp2, i) {
+                var f = i / (SPARKS - 1) - 0.5;
+                var dx = f * spread * (0.85 + Math.random() * 0.3);
+                var dy = (Math.random() - 0.5) * 14;
+                sp2.style.opacity = '1';
+                sp2.getBoundingClientRect();
+                sp2.style.transition = 'transform ' + tBurst + 'ms cubic-bezier(0.2, 0.6, 0.4, 1), opacity ' + tBurst + 'ms ease-out';
+                sp2.style.transform = 'translate(' + dx.toFixed(1) + 'px, ' + dy.toFixed(1) + 'px)';
+                sp2.style.opacity = '0';
+              });
+              if (title) title.classList.remove('weave-pending');
+            }, tEnd + holdMs + tCollapse));
+            tDone = tEnd + holdMs + tCollapse + tBurst + 80;
+          }
+
+          _weaveCleanupTimers.push(setTimeout(cleanup, tDone));
+        } catch (e) {
+          _weaveClearTimers();
+          if (title) title.classList.remove('weave-pending');
+          console.error('[weave] failed, wizard unaffected:', e && e.message);
+        }
+      }
+
       function saveConfiguration() {
         const btn = document.getElementById('saveBtn');
         btn.innerText = "Threading...";
@@ -2121,6 +2427,12 @@
 
         let initialSyncOpt = document.getElementById('initialSync').value;
 
+        // Loom C trigger discrimination: capture before setupSpreadsheet's success
+        // handler (which may run after currentConnId has already changed for other
+        // reasons on a subsequent save) — empty currentConnId means this save is
+        // creating a brand-new connection, not editing an existing one.
+        const isNewConnection = !currentConnId;
+
         google.script.run
           .withFailureHandler(function(error) {
              _logFailure('setupSpreadsheet', error, null);
@@ -2147,7 +2459,13 @@
                 triggerMsg.innerHTML = '<span style="color: var(--warning-text);">&#9888; Auto-Weave could not be enabled &mdash; click <strong>Start the Loom</strong> from the dashboard.</span>';
               }
 
+              if (isNewConnection) {
+                // Applied before nextStep(3) makes #step-3 visible, so there is
+                // no flash of the title before the weave takes over.
+                document.getElementById('successTitle').classList.add('weave-pending');
+              }
               nextStep(3);
+              if (isNewConnection) runWeave();
             } else {
               showStatus('Error: ' + res.error, 'error');
             }
