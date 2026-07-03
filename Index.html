@@ -1511,20 +1511,20 @@
       // ==========================================
       function repairConn(tabName, url, rowEl) {
         showConfirm(
-          'Are you sure you want to repair "' + tabName + '"? This will recreate the missing spreadsheet tab using your backed-up configuration and trigger a fresh sync of the initial emails.',
-          'Yes, Repair',
+          'Are you sure you want to mend "' + tabName + '"? This will recreate the missing spreadsheet tab using your backed-up configuration and trigger a fresh weave of the initial emails.',
+          'Yes, Mend',
           'btn-confirm-danger',
           function() {
-            _setRowLoading(rowEl, 'Repairing…');
+            _setRowLoading(rowEl, 'Mending…');
             google.script.run
-              .withFailureHandler(function(error) { _logFailure('repairConnection', error, null); showStatus('Repair Error: ' + (error && error.message ? error.message : error), 'error'); loadDashboard(); })
+              .withFailureHandler(function(error) { _logFailure('repairConnection', error, null); showStatus('Mend Error: ' + (error && error.message ? error.message : error), 'error'); loadDashboard(); })
               .withSuccessHandler(function(res) {
                 if (!res.success) {
-                  showStatus('Repair Failed: ' + res.error, 'error');
+                  showStatus('Mend Failed: ' + res.error, 'error');
                 } else if (res.triggerEnabled === false) {
-                  showStatus('Repair successful. Tab rebuilt. Click "Enable Auto-Sync" to re-enable.', 'info');
+                  showStatus('Mend successful. Tab rebuilt. Click "Start the Loom" to re-enable.', 'info');
                 } else {
-                  showStatus('Repair successful. Your tab has been rebuilt.', 'success');
+                  showStatus('Mend successful. Your tab has been rebuilt.', 'success');
                 }
                 loadDashboard();
               }).repairConnection(tabName, url);
