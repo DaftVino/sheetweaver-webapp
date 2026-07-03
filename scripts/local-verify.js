@@ -198,6 +198,29 @@ function checkRegistryHelpers(codeSource) {
     failures.push('_readRegistry corrupt-shard/sort/foreign-key: ' + e.message);
   }
 
+  // _flushCorruptShardLogs: previously only asserted that a corrupt shard is
+  // excluded from the returned registry, never that the deferred logDiag call
+  // actually fires once the caller's lock is released (ship pre-landing
+  // review testing gap).
+  try {
+    const propStore = {
+      capture_conn_ok: JSON.stringify({ id: 'ok', userEmail: 'a@example.com', tabName: 'A', spreadsheetUrl: 'https://x' }),
+      capture_conn_bad: '{not valid json'
+    };
+    const ctx = makeShardedContext({ propStore });
+    vm.runInContext(codeSource, ctx);
+    vm.runInContext('_readRegistry(PropertiesService.getScriptProperties())', ctx);
+    const diagCountBefore = Object.keys(propStore).filter(k => k.indexOf('diag_') === 0).length;
+    check('_flushCorruptShardLogs has not logged yet — _readRegistry alone only queues (2A)', diagCountBefore === 0);
+    vm.runInContext('_flushCorruptShardLogs()', ctx);
+    const diagEntries = Object.keys(propStore).filter(k => k.indexOf('diag_') === 0).map(k => JSON.parse(propStore[k]));
+    const corruptShardDiag = diagEntries.find(d => d.where === '_readRegistry:corruptShard');
+    check('_flushCorruptShardLogs logs the corrupt shard via logDiag(ERROR, _readRegistry:corruptShard, ...)',
+      !!corruptShardDiag && corruptShardDiag.key === 'capture_conn_bad' && corruptShardDiag.level === 'ERROR');
+  } catch (e) {
+    failures.push('_flushCorruptShardLogs actually logs: ' + e.message);
+  }
+
   // _readRegistry blob-fallback merge: when capture_registry is still present
   // (migration pending/blocked), a blob record with no matching shard is
   // included; a blob record that DOES match an existing shard defers to the
@@ -380,6 +403,25 @@ function checkWritePathEntryPoints(codeSource) {
     check('Migration-blocked writes never mutate the store', propStore.capture_registry === JSON.stringify(blob));
   } catch (e) {
     failures.push('migration-gated write lock failure: ' + e.message);
+  }
+
+  // setupSpreadsheet shares the same migration-gated retry-error shape as
+  // togglePauseConnection/deleteConnection (D4) — previously only the latter
+  // two were covered (ship pre-landing review testing gap).
+  try {
+    const blob = [{ userEmail: 'tester@example.com', tabName: 'T1', spreadsheetUrl: 'https://x' }];
+    const propStore = { capture_registry: JSON.stringify(blob) };
+    const ctx = makeShardedContext({ propStore, tryLockResult: false, activeEmail: 'tester@example.com' });
+    vm.runInContext(codeSource, ctx);
+    const setupResult = vm.runInContext(
+      "setupSpreadsheet('Label', 'NewTab', 'https://y', [{name:'Subject',pattern:'EMAIL_ID'}], '50', null, true)",
+      ctx
+    );
+    check('setupSpreadsheet returns a retry error when migration cannot acquire its lock (D4)',
+      setupResult && setupResult.success === false && setupResult.error === 'Update in progress, please retry.');
+    check('setupSpreadsheet migration-lock-failure creates no shard', shardKeysIn(propStore).length === 0);
+  } catch (e) {
+    failures.push('setupSpreadsheet migration-gated lock failure: ' + e.message);
   }
 
   // togglePauseConnection / deleteConnection own-lock failure (already-migrated
@@ -693,6 +735,43 @@ function checkRepairConnectionIdThreading(codeSource) {
   } catch (e) {
     failures.push('repairConnection id threading: ' + e.message);
   }
+
+  // getEditConfig / repairConnection migrate-at-entry: both moved to
+  // _migrateAndReadRegistry in the sharding diff but were only ever tested
+  // against an already-sharded store, unlike getDashboardData/getDebugSnapshot
+  // which have dedicated migrate-at-entry tests (ship pre-landing review
+  // testing gap).
+  try {
+    const blobConn = {
+      userEmail: 'tester@example.com', gmailLabel: 'LegacyLabel', tabName: 'LegacyTab',
+      spreadsheetUrl: 'https://legacy', isPaused: false, initialSync: '50', lastSyncTime: null,
+      headerConfigs: [{ name: 'Subject', pattern: 'EMAIL_ID' }]
+    };
+    const propStore = { capture_registry: JSON.stringify([blobConn]) };
+    const ctx = makeShardedContext({ propStore, activeEmail: 'tester@example.com' });
+    vm.runInContext(codeSource, ctx);
+    const editConfig = vm.runInContext("getEditConfig('LegacyTab', 'https://legacy')", ctx);
+    check('getEditConfig migrates a legacy blob at entry', propStore.capture_registry === undefined && shardKeysIn(propStore).length === 1);
+    check('getEditConfig still finds the migrated connection', editConfig && editConfig.success === true && editConfig.tabName === 'LegacyTab');
+  } catch (e) {
+    failures.push('getEditConfig migration-at-entry: ' + e.message);
+  }
+
+  try {
+    const blobConn = {
+      userEmail: 'tester@example.com', gmailLabel: 'LegacyLabel', tabName: 'LegacyRepair',
+      spreadsheetUrl: 'https://legacy-repair', isPaused: false, initialSync: '50', lastSyncTime: null,
+      headerConfigs: [{ name: 'Subject', pattern: 'EMAIL_ID' }]
+    };
+    const propStore = { capture_registry: JSON.stringify([blobConn]) };
+    const ctx = makeShardedContext({ propStore, activeEmail: 'tester@example.com' });
+    vm.runInContext(codeSource, ctx);
+    const result = vm.runInContext("repairConnection('LegacyRepair', 'https://legacy-repair')", ctx);
+    check('repairConnection migrates a legacy blob at entry', propStore.capture_registry === undefined && shardKeysIn(propStore).length === 1);
+    check('repairConnection still succeeds against the freshly migrated shard', result && result.success === true);
+  } catch (e) {
+    failures.push('repairConnection migration-at-entry: ' + e.message);
+  }
 }
 
 // ==========================================
@@ -857,6 +936,44 @@ function checkRegistryOwnership(codeSource) {
       propStore.capture_conn_victim2 === JSON.stringify(victimEntry));
   } catch (error) {
     failures.push(`registry ownership via forged connId: ${error.message}`);
+  }
+
+  // REGRESSION (ship pre-landing review, red-team confirmed): editing one of
+  // your OWN connections (via connId) into an identity match with ANOTHER of
+  // your own connections used to sail through the hijack check (it only
+  // rejected collisions belonging to a DIFFERENT user), silently creating two
+  // shards sharing one (tabName, spreadsheetUrl) identity. The older shard
+  // became a permanently unreachable "ghost" since togglePauseConnection/
+  // deleteConnection/getEditConfig all look up by identity triple via
+  // _connMatches + Array.find (first match wins). Verify the same-user
+  // collision is now rejected too.
+  try {
+    const connA = {
+      id: 'own-a', userEmail: 'tester@example.com', gmailLabel: 'LabelA', tabName: 'TabA',
+      spreadsheetUrl: 'https://shared', sheetId: 1, isPaused: false, initialSync: '50',
+      lastSyncTime: null, headerConfigs: [{ name: 'Subject', pattern: 'EMAIL_ID' }]
+    };
+    const connB = {
+      id: 'own-b', userEmail: 'tester@example.com', gmailLabel: 'LabelB', tabName: 'TabB',
+      spreadsheetUrl: 'https://shared', sheetId: 2, isPaused: false, initialSync: '50',
+      lastSyncTime: null, headerConfigs: [{ name: 'Subject', pattern: 'EMAIL_ID' }]
+    };
+    const propStore = {
+      capture_conn_owna: JSON.stringify(connA),
+      capture_conn_ownb: JSON.stringify(connB)
+    };
+    const ctx = makeShardedContext({ propStore, activeEmail: 'tester@example.com' });
+    vm.runInContext(codeSource, ctx);
+    // Edit connB (via its connId) so its tabName collides with connA's identity.
+    const result = vm.runInContext(
+      "setupSpreadsheet('LabelB', 'TabA', 'https://shared', [{name:'Subject',pattern:'EMAIL_ID'}], '50', 'TabB', true, 'own-b')",
+      ctx
+    );
+    check('setupSpreadsheet rejects a same-user identity collision (ghost-shard regression)', result && result.success === false);
+    check('setupSpreadsheet leaves both of the user\'s own shards untouched on a rejected same-user collision',
+      propStore.capture_conn_owna === JSON.stringify(connA) && propStore.capture_conn_ownb === JSON.stringify(connB));
+  } catch (error) {
+    failures.push(`same-user identity collision regression: ${error.message}`);
   }
 }
 
