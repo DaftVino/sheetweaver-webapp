@@ -29,6 +29,16 @@ every user on this deployment.
 - A corrupted single connection record no longer takes down the whole dashboard for every user —
   the bad record is skipped and logged, everyone else's connections still load.
 - Editing/repairing a connection can no longer leave an orphaned duplicate behind.
+- Editing a connection's tab name into a match with another of your own connections is now
+  rejected with a clear message, instead of silently creating a duplicate that pause/delete/edit
+  could never reach again.
+- A single oversized connection record failing to migrate no longer blocks the whole registry
+  migration (and every user's dashboard) from completing — the bad record is skipped and logged.
+- Closed a narrow window, right after this update deploys, where two connections not yet fully
+  migrated could silently overwrite each other's sync status instead of being stored separately.
+- The per-connection size guard now measures actual storage size correctly for tab names and
+  labels containing non-Latin characters (previously it could under-count and let an oversized
+  capture through).
 
 ## [2.0.5] - 2026-06-30
 
