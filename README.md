@@ -121,7 +121,7 @@ As admin you can optionally set an org-wide default via a Script Property (`defa
 4. Save — the app registers the connection and automatically enables your 15-minute sync trigger.
 5. Emails arriving under the label are processed automatically every 15 minutes.
 
-First-time visitors see a dismissible welcome tip on the dashboard. The header shows the running app version (e.g. `v2.0.5`) and a **Help** menu linking to the Troubleshooting Guide, Setup Guide, [First-Time User Guide](docs/first-time-user-flow.md), Changelog, and a Report-a-Bug shortcut.
+First-time visitors see a dismissible welcome tip on the dashboard. The header shows the running app version (e.g. `v2.2.0`) and a **Help** menu linking to the Troubleshooting Guide, Setup Guide, [First-Time User Guide](docs/first-time-user-flow.md), Changelog, and a Report-a-Bug shortcut. Below the connections table, a status line shows the countdown to the next sync and a lifetime rows-woven count.
 
 ## Themes
 
