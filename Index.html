@@ -643,11 +643,11 @@
           <button type="button" class="toast-close" aria-label="Dismiss notification" onclick="_dismissDebugToast()">&#215;</button>
         </div>
         <ol class="debug-toast-steps">
-          <li>Open a <a href="https://github.com/DaftVino/SheetWeaver-Webapp/issues/new/choose" target="_blank" rel="noopener">GitHub Issue</a></li>
+          <li>Open a <a href="https://github.com/DaftVino/sheetweaver-webapp/issues/new/choose" target="_blank" rel="noopener">GitHub Issue</a></li>
           <li>Paste the debug text you just copied</li>
           <li>Describe what you were doing when the error occurred</li>
         </ol>
-        <div class="debug-toast-footer">Or check the <a href="https://github.com/DaftVino/SheetWeaver-Webapp/blob/main/docs/troubleshooting.md" target="_blank" rel="noopener">Troubleshooting Guide</a> first &rarr;</div>
+        <div class="debug-toast-footer">Or check the <a href="https://github.com/DaftVino/sheetweaver-webapp/blob/main/docs/troubleshooting.md" target="_blank" rel="noopener">Troubleshooting Guide</a> first &rarr;</div>
       </div>
 
       <div class="app-header">
@@ -687,12 +687,12 @@
         <div class="help-menu" id="helpMenu">
           <button type="button" class="help-trigger debug-btn" id="helpTriggerBtn" aria-haspopup="menu" aria-expanded="false" onclick="_toggleHelpMenu(event)">Help &#9660;</button>
           <div class="help-dropdown" role="menu" id="helpDropdown">
-            <a href="https://github.com/DaftVino/SheetWeaver-Webapp/blob/main/docs/troubleshooting.md" target="_blank" rel="noopener" role="menuitem">Troubleshooting Guide</a>
-            <a href="https://github.com/DaftVino/SheetWeaver-Webapp/blob/main/docs/setup-guide.md" target="_blank" rel="noopener" role="menuitem">Setup Guide</a>
-            <a href="https://github.com/DaftVino/SheetWeaver-Webapp/blob/main/docs/first-time-user-flow.md" target="_blank" rel="noopener" role="menuitem">First-Time User Guide</a>
-            <a href="https://github.com/DaftVino/SheetWeaver-Webapp/releases" target="_blank" rel="noopener" role="menuitem">Changelog</a>
+            <a href="https://github.com/DaftVino/sheetweaver-webapp/blob/main/docs/troubleshooting.md" target="_blank" rel="noopener" role="menuitem">Troubleshooting Guide</a>
+            <a href="https://github.com/DaftVino/sheetweaver-webapp/blob/main/docs/setup-guide.md" target="_blank" rel="noopener" role="menuitem">Setup Guide</a>
+            <a href="https://github.com/DaftVino/sheetweaver-webapp/blob/main/docs/first-time-user-flow.md" target="_blank" rel="noopener" role="menuitem">First-Time User Guide</a>
+            <a href="https://github.com/DaftVino/sheetweaver-webapp/releases" target="_blank" rel="noopener" role="menuitem">Changelog</a>
             <hr role="separator">
-            <a href="https://github.com/DaftVino/SheetWeaver-Webapp/issues/new/choose" target="_blank" rel="noopener" role="menuitem">Report a Bug</a>
+            <a href="https://github.com/DaftVino/sheetweaver-webapp/issues/new/choose" target="_blank" rel="noopener" role="menuitem">Report a Bug</a>
           </div>
         </div>
         <button type="button" id="copyDebugBtn" class="debug-btn" onclick="copyDebugInfo()" title="Copy debug snapshot to clipboard">Copy Debug</button>
@@ -708,7 +708,7 @@
         <div id="syncBannerContainer"></div>
 
         <div id="welcomeTipBanner" role="note" class="welcome-tip" style="display:none;">
-          <span>First time here? The setup takes about 2 minutes &mdash; <a href="https://github.com/DaftVino/SheetWeaver-Webapp/blob/main/docs/first-time-user-flow.md" target="_blank" rel="noopener">start with the guide</a>.</span>
+          <span>First time here? The setup takes about 2 minutes &mdash; <a href="https://github.com/DaftVino/sheetweaver-webapp/blob/main/docs/first-time-user-flow.md" target="_blank" rel="noopener">start with the guide</a>.</span>
           <button type="button" class="welcome-tip-dismiss" onclick="_dismissWelcomeTip()" aria-label="Dismiss welcome tip">&#215;</button>
         </div>
 
@@ -753,7 +753,7 @@
           <div class="admin-panel-header">
             <h3 class="admin-panel-title">Admin Diagnostics</h3>
             <div style="display:flex; gap: var(--space-2); align-items:center; flex-wrap:wrap;">
-              <a href="https://github.com/DaftVino/SheetWeaver-Webapp/issues/new/choose" target="_blank" rel="noopener" class="secondary-btn admin-btn" style="margin:0; text-decoration:none;">Report a Bug</a>
+              <a href="https://github.com/DaftVino/sheetweaver-webapp/issues/new/choose" target="_blank" rel="noopener" class="secondary-btn admin-btn" style="margin:0; text-decoration:none;">Report a Bug</a>
               <button class="admin-btn secondary-btn" onclick="refreshAdminDiagnostics()" style="margin:0;">Refresh</button>
               <button class="admin-btn" style="background:var(--danger); margin:0;" onclick="clearDiagnostics()">Clear All</button>
             </div>
@@ -2402,7 +2402,7 @@
         closeBtn.onclick = function() { wrapper.remove(); };
         const guideEl = document.createElement('div');
         guideEl.style.cssText = 'margin-top: var(--space-2); font-size: var(--font-xs); color: var(--text-main);';
-        guideEl.innerHTML = '<strong>Next steps:</strong><ol style="margin: var(--space-1) 0 0; padding-left: var(--space-5);"><li>Open a <a href="https://github.com/DaftVino/SheetWeaver-Webapp/issues/new/choose" target="_blank" rel="noopener">GitHub Issue</a></li><li>Select all the text above and copy it manually</li><li>Describe what you were doing when the error occurred</li></ol>';
+        guideEl.innerHTML = '<strong>Next steps:</strong><ol style="margin: var(--space-1) 0 0; padding-left: var(--space-5);"><li>Open a <a href="https://github.com/DaftVino/sheetweaver-webapp/issues/new/choose" target="_blank" rel="noopener">GitHub Issue</a></li><li>Select all the text above and copy it manually</li><li>Describe what you were doing when the error occurred</li></ol>';
         wrapper.appendChild(note);
         wrapper.appendChild(ta);
         wrapper.appendChild(guideEl);
