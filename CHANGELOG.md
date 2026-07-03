@@ -14,8 +14,8 @@ animation are also in place.
 - `--thread` design token (teal/thread accent) and `--duration-fast`/`--duration-base`
   motion tokens in all three themes, ready for upcoming loom status-line and weave-animation
   features. Not yet used by any element.
-- `Start the Loom` button and the account-setup success screen now show a tooltip/title
-  spelling out the 15-minute auto-weave cadence.
+- `Start the Loom` button now shows a tooltip spelling out the 15-minute auto-weave
+  cadence that its shorter label dropped.
 
 ### Changed
 - Renamed ~35 user-facing strings across the dashboard, setup wizard, and status
