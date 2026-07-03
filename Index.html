@@ -1573,7 +1573,7 @@
       function togglePause(tabName, url, rowEl) {
         _setRowLoading(rowEl, 'Re-threading…');
         google.script.run
-          .withFailureHandler(function(error) { _logFailure('togglePauseConnection', error, null); showStatus('Error resting/weaving thread: ' + (error && error.message ? error.message : error), 'error'); loadDashboard(); })
+          .withFailureHandler(function(error) { _logFailure('togglePauseConnection', error, null); showStatus('Error toggling thread: ' + (error && error.message ? error.message : error), 'error'); loadDashboard(); })
           .withSuccessHandler(function(res) {
             if(!res.success) showStatus('Error: ' + res.error, 'error');
             loadDashboard();
