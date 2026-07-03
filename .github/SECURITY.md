@@ -21,7 +21,7 @@ You can expect an acknowledgment within 5 business days and a resolution or stat
 
 This project runs entirely on Google's infrastructure as a Google Apps Script web app. The attack surface is limited, but relevant concerns include:
 
-- **Cross-user data leakage** — the shared `capture_registry` property stores connection metadata for all users. A bug here could expose another user's label names or spreadsheet URLs. The `getDebugSnapshot()` function mitigates this by filtering the registry to the caller's own connections only and is safe to call as a non-admin; it does not expose other users' data.
+- **Cross-user data leakage** — the connection registry (Script Properties, one `capture_conn_<id>` key per connection) stores connection metadata for all users in the same shared store. A bug here could expose another user's label names or spreadsheet URLs. The `getDebugSnapshot()` function mitigates this by filtering the registry to the caller's own connections only and is safe to call as a non-admin; it does not expose other users' data.
 - **XSS in the web UI** — `Index.html` renders user-supplied values (label names, tab names). Improperly escaped output could allow script injection. All user-data values are assigned via `textContent` or safe DOM properties, never via `innerHTML`.
 - **Scope creep** — the Apps Script OAuth scopes (`gmail.readonly`, `spreadsheets`, `script.projects`) should remain minimal. Adding unnecessary scopes is a security concern.
 - **Credential exposure** — `.clasprc.json` contains OAuth refresh tokens. It must never be committed to version control (it is listed in `.gitignore`).

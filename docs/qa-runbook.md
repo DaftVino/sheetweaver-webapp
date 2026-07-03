@@ -94,7 +94,7 @@ Verify the install path works end-to-end from zero for a new installer.
 | 6.3 | Admin opens Apps Script → Executions | Same report ID appears in `[DIAG]` log line |
 | 6.4 | Admin clicks **Clear Diagnostics** | Panel is empty on next load |
 | 6.5 | Non-admin account opens dashboard | Admin Diagnostics section is absent |
-| 6.6 | Admin reviews registry byte size in Admin Diagnostics | Byte size shown; significantly below 9000 for typical use |
+| 6.6 | Admin reviews **Largest connection** and **Total store** metrics in Admin Diagnostics | Both shown as `used / cap` bytes; significantly below their respective caps (~9000 bytes per connection, ~500000 bytes total store) for typical use |
 | 6.7 | Admin reviews `lastRunStatus` column in dashboard | Shows status (ok/warn/partial/error) and relative time for each connection |
 | 6.8 | Click **Copy Debug** on dashboard and inside the wizard | Clipboard receives a text block starting with `=== Sheet Weaver Debug ===`; contains app version, user email, connection status, recent error report IDs |
 | 6.9 | Force a client-side failure (temporarily break a `google.script.run` call), then click **Copy Debug** | Failure appears in the "Recent Client Errors" section; the same event also appears in Admin Diagnostics (via `logClientError`) |

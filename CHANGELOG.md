@@ -4,6 +4,42 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-07-03
+
+Registry sharding: removes the hard ~9-connection ceiling that was about to break writes for
+every user on this deployment.
+
+### Added
+- Per-connection size guard: saving a capture with too many columns/rules now fails with a
+  clear message instead of silently corrupting the shared registry.
+- Admin debug panel now shows largest-connection size and total store usage, replacing the old
+  single-blob byte metric that stopped meaning anything once the registry was sharded.
+
+### Changed
+- The connection registry moved from a single Script Property (capped at 9KB total, shared by
+  every user) to one property per connection — the practical ceiling goes from ~9 connections to
+  roughly 100-200, bound by the ~500KB total Script Properties storage cap rather than the old
+  9KB-per-registry hard cap.
+- Editing a capture's target Google Sheet URL now updates the same connection in place instead
+  of silently creating a duplicate.
+- Existing registries migrate automatically and losslessly on first load after this update; the
+  original data is preserved as a backup Script Property.
+
+### Fixed
+- A corrupted single connection record no longer takes down the whole dashboard for every user —
+  the bad record is skipped and logged, everyone else's connections still load.
+- Editing/repairing a connection can no longer leave an orphaned duplicate behind.
+- Editing a connection's tab name into a match with another of your own connections is now
+  rejected with a clear message, instead of silently creating a duplicate that pause/delete/edit
+  could never reach again.
+- A single oversized connection record failing to migrate no longer blocks the whole registry
+  migration (and every user's dashboard) from completing — the bad record is skipped and logged.
+- Closed a narrow window, right after this update deploys, where two connections not yet fully
+  migrated could silently overwrite each other's sync status instead of being stored separately.
+- The per-connection size guard now measures actual storage size correctly for tab names and
+  labels containing non-Latin characters (previously it could under-count and let an oversized
+  capture through).
+
 ## [2.0.5] - 2026-06-30
 
 Cleanup and polish release on top of 2.0.0: in-app help and first-run guidance, header layout

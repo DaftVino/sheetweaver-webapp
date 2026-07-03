@@ -83,11 +83,11 @@ If buttons are still unresponsive, open the browser console (F12 → Console) an
 
 ## The Dashboard Shows No Connections After Setup
 
-The connection registry is stored in Script Properties. If it was cleared or setup failed silently:
+The connection registry is stored in Script Properties, one key per connection. If it was cleared or setup failed silently:
 
 1. Open the Apps Script editor → **Project Settings → Script Properties**.
-2. Look for a key named `capture_registry`. Its value should be a JSON array.
-3. If it's missing or empty, check the Admin Diagnostics panel for a report ID from `setupSpreadsheet`.
+2. Look for keys named `capture_conn_<id>` — one per connection, each holding a single JSON object. (On a project not yet upgraded to sharding, you may instead see a single `capture_registry` key holding a JSON array; it is migrated to `capture_conn_*` shards automatically the next time the registry is read or written.)
+3. If the expected keys are missing, check the Admin Diagnostics panel for a report ID from `setupSpreadsheet`.
 4. Re-run the setup flow; the Admin Diagnostics panel will capture any new failure with a report ID.
 
 ---
@@ -221,11 +221,15 @@ If the old version still shows, confirm you did not create a separate **New depl
 
 ## Registry Write Failures (Advanced)
 
-The `capture_registry` Script Property is capped at ~9 KB. If connections are failing to save, check the Admin Diagnostics panel for a report ID from `setupSpreadsheet` and look at the registry byte size shown there.
+Each connection is stored in its own `capture_conn_<id>` Script Property, capped at ~9 KB (`MAX_CONN_BYTES`), and the Script Properties store as a whole is capped at ~500 KB across all connections and users. If connections are failing to save, check the Admin Diagnostics panel for a report ID from `setupSpreadsheet` and look at the **Largest connection** and **Total store** metrics shown there.
 
-If the byte size is near 9000:
+If **Largest connection** is near its cap:
 
-- Delete unused connections from the dashboard.
-- Ask your admin whether `headerConfigs` stored per-connection can be trimmed.
+- That single connection's `headerConfigs` (or other per-connection data) is too large — ask your admin whether it can be trimmed.
+- Because the registry is sharded, this only affects the one oversized connection; other connections can still save normally.
 
-The admin can monitor byte size in the Admin Diagnostics panel. A write failure will produce a report ID and a `[DIAG]` log entry with `where: setupSpreadsheet` or `processEmails`.
+If **Total store** is near its cap:
+
+- Delete unused connections from the dashboard to free up Script Properties space.
+
+The admin can monitor both metrics in the Admin Diagnostics panel. A write failure will produce a report ID and a `[DIAG]` log entry with `where: setupSpreadsheet` or `processEmails`.

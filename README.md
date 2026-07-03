@@ -137,7 +137,7 @@ Theme choice is persisted per-user via `PropertiesService`.
 
 ## Known Limitations
 
-- The shared `capture_registry` property is capped at ~9 KB, limiting total connections across all users. Monitor byte size in the Admin Diagnostics panel.
+- Each connection is stored in its own Script Property (capped at ~9 KB per connection), and the overall Script Properties store is capped at ~500 KB across all users. Monitor both in the Admin Diagnostics panel.
 - Consumer Gmail accounts operating under `ANYONE_WITH_GOOGLE` may see an empty identity in rare multi-account browser sessions. The app shows a clear error with a report ID when this happens.
 
 Remediation history is internal and not included in this repository.
