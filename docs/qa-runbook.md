@@ -1,6 +1,6 @@
 # QA Runbook — Post-Deploy Test Matrix
 
-Run these checks after every new deployment. All tests require a live Apps Script deployment and at least two Google accounts: one admin (the installer) and one regular user. A third "denied" account is needed for scope-revoke tests.
+For developers/admins verifying a deployment. Run these checks after every new deployment. All tests require a live Apps Script deployment and at least two Google accounts: one admin (the installer) and one regular user. A third "denied" account is needed for scope-revoke tests. See [ARCHITECTURE.md](ARCHITECTURE.md) for how the pieces being tested fit together.
 
 **Local gate must pass before any deploy:**
 
@@ -79,9 +79,9 @@ Verify the install path works end-to-end from zero for a new installer.
 | 5.3 | First sync with "all emails" on a label with 150+ emails | First run processes 100 threads; cursor saved; second run picks up remaining; both runs advance correctly |
 | 5.4 | Run sync again immediately (trigger fires) | Incremental sync; only new emails added; no duplicates |
 | 5.5 | Sync with large HTML email bodies | Email processed; no timeout; counts appear in last-sync column |
-| 5.6 | Pause a connection, wait for trigger, unpause | No emails processed while paused; sync resumes after unpause |
-| 5.7 | Delete a connection from the dashboard | Connection removed from registry; no further sync |
-| 5.8 | Create a connection with tab name containing `'` `"` `\` `<` | Setup succeeds; all dashboard action buttons (Edit/Pause/Delete/Repair) function correctly |
+| 5.6 | Rest a thread, wait for trigger, resume (Weave On) | No emails processed while resting; weave resumes after Weave On |
+| 5.7 | Delete a thread from the dashboard | Thread removed from registry; no further weave |
+| 5.8 | Create a thread with tab name containing `'` `"` `\` `<` | Setup succeeds; all dashboard action buttons (Edit/Rest/Delete/Mend) function correctly |
 
 ---
 

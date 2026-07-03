@@ -1,4 +1,4 @@
-const APP_VERSION = '2.1.1';
+const APP_VERSION = '2.3.0';
 
 const DEFAULT_SPREADSHEET_URL = '';
 const USER_DEFAULT_SPREADSHEET_URL_KEY = 'user_default_spreadsheet_url';
@@ -344,6 +344,8 @@ function checkUserTrigger() {
   return triggers.some(t => t.getHandlerFunction() === 'processEmails');
 }
 
+const TRIGGER_INTERVAL_MINUTES = 15; // single source of truth for the Auto-Weave cadence
+
 function enableUserTrigger() {
   const triggers = ScriptApp.getProjectTriggers();
   const processTriggers = triggers.filter(t => t.getHandlerFunction() === 'processEmails');
@@ -360,7 +362,7 @@ function enableUserTrigger() {
   } else if (processTriggers.length === 0) {
     ScriptApp.newTrigger('processEmails')
              .timeBased()
-             .everyMinutes(15)
+             .everyMinutes(TRIGGER_INTERVAL_MINUTES)
              .create();
   }
   return true;
@@ -373,6 +375,11 @@ const REGISTRY_SHARD_PREFIX = 'capture_conn_';
 const REGISTRY_BACKUP_KEY = 'capture_registry_backup_v1';
 const MAX_CONN_BYTES = 9000; // GAS per-property size cap; enforced in setupSpreadsheet, reported in getAdminDiagnostics
 const MAX_TOTAL_STORE_BYTES = 500000; // GAS total-script-property-store size cap; reported in getAdminDiagnostics
+const LOOM_TOTAL_ROWS_KEY = 'loom_total_rows_woven'; // Loom B: deployment-wide since-install counter
+
+function _getIntProp(props, key) {
+  return parseInt(props.getProperty(key) || '0', 10) || 0;
+}
 
 // Corrupt shards found by _readRegistry are queued here rather than logged
 // inline, so a caller holding a lock never triggers logDiag's own internal
@@ -681,7 +688,8 @@ function getDashboardData() {
   });
 
   const hasTrigger = checkUserTrigger();
-  return { connections: connections, activeEmail: email, hasTrigger: hasTrigger, appVersion: APP_VERSION };
+  const totalRowsWoven = _getIntProp(props, LOOM_TOTAL_ROWS_KEY);
+  return { connections: connections, activeEmail: email, hasTrigger: hasTrigger, appVersion: APP_VERSION, totalRowsWoven: totalRowsWoven, triggerIntervalMinutes: TRIGGER_INTERVAL_MINUTES };
   } catch(e) {
     logDiag('ERROR', 'getDashboardData', { errorClass: e.name, message: e.message });
     throw e;
@@ -1442,6 +1450,7 @@ function _flushRegistryResults(props, syncResults) {
     return;
   }
   const writeFailures = [];
+  let counterWriteFailure = null;
   try {
     const freshRegistry = _readRegistry(props);
     freshRegistry.forEach(c => {
@@ -1461,12 +1470,35 @@ function _flushRegistryResults(props, syncResults) {
         writeFailures.push({ tabName: c.tabName, errorClass: e.name, message: e.message });
       }
     });
+
+    // Loom B: deployment-wide "since-install" rows-woven counter, ambient trust
+    // copy only (not billing data). Summed from counts.new already computed by
+    // _processSingleConnection — no new per-row counting needed.
+    const totalNewRows = syncResults.reduce(function(sum, r) {
+      return sum + ((r.counts && typeof r.counts.new === 'number') ? r.counts.new : 0);
+    }, 0);
+    if (totalNewRows > 0) {
+      try {
+        const current = _getIntProp(props, LOOM_TOTAL_ROWS_KEY);
+        props.setProperty(LOOM_TOTAL_ROWS_KEY, String(current + totalNewRows));
+      } catch(e) {
+        // Fail-silent by design (ambient trust copy, not billing data) — logged
+        // below, AFTER lock.releaseLock(), same as writeFailures. Logging here
+        // while still holding the lock would risk the undocumented GAS
+        // LockService reentrancy hazard (see _pendingCorruptShardKeys comment,
+        // same file, above).
+        counterWriteFailure = { errorClass: e.name, message: e.message, rowsLost: totalNewRows };
+      }
+    }
   } finally {
     lock.releaseLock();
     _flushCorruptShardLogs();
     writeFailures.forEach(function(f) {
       logDiag('ERROR', 'processEmails:flushWrite', f);
     });
+    if (counterWriteFailure) {
+      logDiag('WARN', 'processEmails:loomCounter', counterWriteFailure);
+    }
   }
 }
 

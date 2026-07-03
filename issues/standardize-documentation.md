@@ -56,7 +56,18 @@ Links in `Index.html` are absolute GitHub URLs to `blob/main/docs/...`. **Index.
 
 ### What's accurate (verified, do not "fix")
 
-- All UI strings cited in docs match `Index.html` exactly: "+ Add a new capture" (1392), "Verify & Scan Label" (1808), "Enable 15-Min Auto-Sync" (1212), "Auto-Sync is Active/Off" (1208/1211), "Configure Spreadsheet Data" (794), "Custom Tab Name" (804), "First Sync Fetch" + the three options (809-813), "Copy Debug" (698), "Recheck Permissions" (1703), "Open Authorization" (1709), "Active Connections" (716), "Enable Auto-Sync" (1513).
+- **Re-verified 2026-07-03 for /plan-eng-review (Phase 4):** the list below was audited 2026-07-01, before Loom D's vocabulary rename shipped. 4 of the 12 originally-cited strings are now stale — see "Strings requiring correction" below. The remaining 8 still match `Index.html` exactly: "Verify & Scan Label" (824), "Configure Spreadsheet Data" (831), "Custom Tab Name" (841), "First Sync Fetch" + the three options, "Copy Debug" (733), "Recheck Permissions" (1809), "Open Authorization" (1815).
+
+### Strings requiring correction (found stale during /plan-eng-review, 2026-07-03)
+
+Loom D renamed these; the docs below still quote the pre-rename text and must be updated as part of Phase 4, not skipped as "already accurate":
+
+| Doc quoting the stale string | Old (in doc today) | Current (`Index.html`) |
+|---|---|---|
+| `first-time-user-flow.md:73` | "Active Connections" | "Active Threads" (`Index.html:751`) |
+| `first-time-user-flow.md:97` | "✅ Auto-Sync is Active" | "✅ The Loom is Running" (`Index.html:1247`) |
+| `first-time-user-flow.md:102` | "⚠️ Auto-Sync is Off" / "Enable 15-Min Auto-Sync" | "⚠️ The Loom is Idle" / "Start the Loom" (`Index.html:1250-1251`) |
+| `setup-guide.md:301` | "Enable Auto-Sync" | "Start the Loom" (`Index.html:2464`) |
 - `APP_VERSION = '2.0.5'` (`Code.js:1`) matches README's `v2.0.5` example.
 - Help menu contents described in `README.md:124` match `Index.html:689-697` (incl. Changelog → GitHub Releases).
 - ARCHITECTURE.md registry structure, lock coverage, and diagnostics description match Code.js behavior (spot-checked).
@@ -84,15 +95,24 @@ Links in `Index.html` are absolute GitHub URLs to `blob/main/docs/...`. **Index.
 - Merge §Re-Deploying After Changes (311-321) into §Update Instructions (248+) — it is the same procedure; keep one full copy, delete the other, keep the "URL stays the same" fact.
 - Plain-language pass (terms allowed, sentences shortened).
 - Do not change any heading anchors that other docs link to (`#update-instructions`, `#github-actions-ci-deploy`) — `troubleshooting.md:152` links one today and the new pointers will link the other.
+- **Line 301** ("... click **Enable Auto-Sync** if they never had a trigger ...") — update to "Start the Loom" to match the current button (`Index.html:2464`); pre-rename text, found stale during /plan-eng-review.
 
 ### 2. `docs/troubleshooting.md`
 - §Update Available Banner (162-193): keep symptom + meaning + "does not auto-update" explanation; replace the two command blocks and 5-step deployment edit with one link to `setup-guide.md#update-instructions`; keep the post-update verification lines.
 - §Update Did Not Take Effect (196-218): keep symptom, cause ("clasp push alone doesn't bump the live version"), the wrong-path warning about `clasp pull`, and the verify list; replace repeated steps with the same link.
 - 7th-grade pass across all sections: lead each with what the user sees and what to click; keep report-ID/function-name detail but move it after the plain-English fix, in admin-oriented sentences (model: the existing §Login/Permission Loop section).
 - Keep §Registry Write Failures marked "(Advanced)" as the canonical user-visible explanation of the 9 KB limit.
+- **Loom D rename-completeness re-verification (added by /plan-eng-review, 2026-07-03):** commit `1ad187f` already renamed this file's literal quoted UI strings/headings ("Auto-Sync is Off"→"The Loom is Idle", "No Connections"→"No Threads" heading) but deliberately left backend/technical prose alone (e.g. line 86 "the connection registry...one key per connection", matching `capture_conn_<id>` property-key naming). Before the de-dupe/7th-grade pass, re-run Loom D acceptance criterion 4's consistency grep (`capture`, `connection`, `sync`, `Dashboard`) against this file and confirm every survivor is genuinely backend/technical prose, not a missed UI reference. List survivors + justification in the Phase 4 PR description, same format as Loom D's own AC9.
+
+### 2b. `.github/ISSUE_TEMPLATE/bug_report.md`, `.github/ISSUE_TEMPLATE/feature_request.md`
+- **(Added by /plan-eng-review, 2026-07-03)** Same rename-completeness re-verification as troubleshooting.md above: grep for `capture`/`connection`/`sync`/`Dashboard` and confirm each survivor is intentional (generic word, not a stale button/banner reference). `bug_report.md:39` ("check the dashboard banner") reads as a generic pointer, not a literal stale string — verify during this pass rather than assume.
 
 ### 3. `docs/first-time-user-flow.md`
-- Already near target. Light pass: verify sentences stay short, confirm all UI strings still match (done — they do), keep as-is otherwise. This doc is the header-block template for the others.
+- Already near target. Light pass: verify sentences stay short, keep as-is otherwise. This doc is the header-block template for the others.
+- **UI-string corrections required (found stale during /plan-eng-review, 2026-07-03 — supersedes the original spec's "confirm all UI strings still match (done — they do)" claim):**
+  - Line 73: "Active Connections" → "Active Threads"
+  - Line 97: "✅ Auto-Sync is Active" → "✅ The Loom is Running"
+  - Line 102: "⚠️ Auto-Sync is Off" / "Enable 15-Min Auto-Sync" → "⚠️ The Loom is Idle" / "Start the Loom"
 
 ### 4. `README.md`
 - §Prerequisites (24-46): shrink to the 3-bullet requirement list; delete both install command blocks and the `npx clasp` note (canonical: setup-guide §Prerequisites); link there.
@@ -130,6 +150,8 @@ Links in `Index.html` are absolute GitHub URLs to `blob/main/docs/...`. **Index.
 8. Every in-scope doc opens with a purpose/audience header block.
 9. The three code-linked filenames, their locations, and their purposes are unchanged; `Index.html`, `Code.js`, `CHANGELOG.md`, `docs/TODOS.md` have zero diff.
 10. No factual content is deleted outright — everything removed as a duplicate has a surviving canonical copy that the pointer reaches in one click.
+11. **(Added by /plan-eng-review, 2026-07-03)** `first-time-user-flow.md` and `setup-guide.md` quote only post-Loom-D UI strings — the 4 stale strings identified above ("Active Connections", "Auto-Sync is Active/Off", "Enable 15-Min Auto-Sync", "Enable Auto-Sync") do not appear anywhere in the edited docs.
+12. **(Added by /plan-eng-review, 2026-07-03)** `troubleshooting.md` and both GitHub issue templates: every surviving `capture`/`connection`/`sync`/`Dashboard` term is confirmed backend/technical prose (matching Code.js internals) or a generic pointer, not a missed UI-facing rename — survivors + justification listed in the PR description (mirrors Loom D's own AC9 format).
 
 ## Out of Scope
 
@@ -146,6 +168,10 @@ Links in `Index.html` are absolute GitHub URLs to `blob/main/docs/...`. **Index.
 3. **Read-through:** full pass of `first-time-user-flow.md` and `troubleshooting.md` for reading level; full pass of every edited doc for factual survival (criterion 10).
 4. **Git diff review** confirming zero changes to `Index.html`, `Code.js`, `CHANGELOG.md`, `docs/TODOS.md`.
 5. No build/tests apply — docs only. `npm run verify:local` still passes (it doesn't inspect docs, but confirms nothing else broke).
+6. **(Added by /plan-eng-review, 2026-07-03) Length check (criteria 3, 4, 5):** `grep -c '^```' README.md` — must be 0 (no fenced command blocks remain); confirm the `setup-guide.md` §First-Time User Flow body is ≤3 lines by inspection; `grep -c '.' <(sed -n '/^### Copy Debug/,/^###/p' README.md)` (and the equivalent block in `SUPPORT.md`) sanity-checks the Copy Debug sections stayed ≤3 lines.
+7. **(Added by /plan-eng-review, 2026-07-03) Header-block check (criterion 8):** for each of the 11 in-scope files, confirm the first non-blank content after the title is a purpose/audience sentence — `head -5` per file, manual eyeball, since header-block prose can't be grep-matched reliably.
+8. **(Added by /plan-eng-review, 2026-07-03) Stale-string check (criterion 11):** `grep -rn "Active Connections\|Auto-Sync is Active\|Auto-Sync is Off\|Enable 15-Min Auto-Sync\|Enable Auto-Sync" README.md docs/*.md .github/**/*.md` — must return zero matches after the edits land.
+9. **(Added by /plan-eng-review, 2026-07-03) Rename-completeness check (criterion 12):** `grep -inE "capture|connection|sync|dashboard" docs/troubleshooting.md .github/ISSUE_TEMPLATE/*.md` — every hit gets a one-line justification (backend/technical prose vs. generic word) in the PR description; any hit that's actually a missed UI reference gets fixed, not just logged.
 
 ## Effort
 

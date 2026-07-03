@@ -1,14 +1,16 @@
 # Support
 
+Where to get help with SheetWeaver, for users and admins. For contributing code changes see [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Getting Help
 
-This is an internal Google Workspace tool. Support channels depend on how your organization has deployed it.
+SheetWeaver runs on Google Apps Script, for both consumer `@gmail.com` and Google Workspace accounts. Support channels depend on how your organization has deployed it.
 
 ### Self-service
 
-1. **Read the docs** — [README.md](../README.md) covers setup and usage. [ARCHITECTURE.md](../docs/ARCHITECTURE.md) covers how it works internally.
+1. **Read the docs** — [Setup Guide](../docs/setup-guide.md) covers install and update; [First-Time User Guide](../docs/first-time-user-flow.md) covers everyday usage; [ARCHITECTURE.md](../docs/ARCHITECTURE.md) covers how it works internally.
 2. **Check execution logs** — In the Apps Script editor, go to **Executions** to see recent runs and any error stack traces. Detailed logs are also in **Google Cloud Console → Logging** (search for the script project).
-3. **Copy Debug** — Click the **Copy Debug** button in the header of the web app. It produces a formatted snapshot (app version, your connections, recent error report IDs, browser context) that you can paste into a GitHub Issue or a support message. This is the fastest way to give the admin the exact detail they need.
+3. **Copy Debug** — click the button in the header and paste the output into your report. Full explanation: [Troubleshooting Guide](../docs/troubleshooting.md).
 
 ### GitHub Issues
 

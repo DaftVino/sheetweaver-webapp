@@ -14,8 +14,8 @@ Brief description of what this PR does and why.
 Describe the manual testing you performed after `clasp push`:
 
 - [ ] Walked through the full setup flow (label verify → field config → save)
-- [ ] Dashboard loads and shows existing connections
-- [ ] Edit / Pause / Delete / Repair actions work
+- [ ] Dashboard loads and shows existing threads
+- [ ] Edit / Rest / Delete / Mend actions work
 - [ ] `processEmails()` ran successfully (check Executions panel)
 - [ ] Tested with edge-case inputs (empty label, special characters, etc.)
 

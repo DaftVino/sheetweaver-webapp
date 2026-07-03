@@ -1,5 +1,7 @@
 # Architecture
 
+For developers: how SheetWeaver's frontend, backend, and storage fit together. For install steps see the [Setup Guide](setup-guide.md); for the test matrix see [qa-runbook.md](qa-runbook.md).
+
 ## Overview
 
 SheetWeaver is a Google Apps Script web app. There is no traditional server — Google's infrastructure hosts and runs all code. The "backend" is a set of server-side functions in `Code.js` exposed to the browser via `google.script.run`. The "frontend" is a single HTML file (`Index.html`) served by `HtmlService`.

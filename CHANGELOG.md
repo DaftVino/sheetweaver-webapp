@@ -4,6 +4,51 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-07-03
+
+Docs got a cleanup pass, and the wizard's success animation actually plays now.
+
+### Fixed
+- The wizard's success-screen weave animation now plays as designed: a bug made the
+  "The Loom Is Strung!" title reappear the instant a connection was saved, hiding
+  nearly the entire ~2.6s thread-weave animation behind it. The title now stays
+  hidden until the animation actually finishes.
+- The dashboard status line's "next weave" countdown now refreshes every minute
+  instead of freezing at whatever it read when the page first loaded.
+
+### Changed
+- Documentation reorganized: install and update steps now live in one place (the
+  Setup Guide) with every other doc linking to it instead of repeating the
+  commands. Fixed a broken link in CONTRIBUTING.md and a stale pointer in
+  SUPPORT.md. Updated a handful of doc references still using pre-rename button
+  names ("Enable Auto-Sync," "Active Connections") to match the current UI.
+- The dashboard status footer is now announced to screen readers as a live
+  status region.
+
+## [2.2.0] - 2026-07-03
+
+The loom now tells you it's working. A quiet status line on the dashboard shows when
+the next weave will run and how many rows have been woven since install, and the
+setup wizard's success screen gets a moment of craft: two threads draw together and
+snap into one as your new connection joins the loom.
+
+### Added
+- Dashboard status line below the connections table: "Next weave in ~N min · X,XXX
+  rows woven," with quieter states for a resting loom, an overdue weave, or a
+  brand-new install still awaiting its first run. Hidden entirely with no connections.
+- Lifetime rows-woven counter, visible in the status line — counts every row ever
+  written across all connections since install, survives connection deletion.
+- Thread-weave animation on the wizard's success screen: fires once when a new
+  connection is created (never on edits). Two threads draw, tense, and snap into one
+  strand that resolves into the "Loom Is Strung!" title — a spark burst in Solar and
+  Torres, a race car erasing the thread in the C64 theme. Fully skipped for anyone
+  with reduced-motion enabled; a stray error never blocks the wizard.
+
+### Changed
+- The 15-minute auto-weave interval is now read from the server on every dashboard
+  load rather than assumed client-side, so the status line's countdown can never
+  drift from the actual trigger cadence.
+
 ## [2.1.1] - 2026-07-03
 
 The app now speaks its own vocabulary: connections are threads, syncing is weaving, the
