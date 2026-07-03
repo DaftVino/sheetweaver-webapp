@@ -1094,6 +1094,7 @@
 
       let currentLabel = "";
       let originalTabName = "";
+      let currentConnId = "";
       
       let fetchedEmailBodies = []; 
       let currentEmailIndex = 0;
@@ -1535,6 +1536,7 @@
         }
         
         originalTabName = res.tabName;
+        currentConnId = res.id || "";
         currentLabel = res.gmailLabel;
         
         document.getElementById('displayLabelName').innerText = currentLabel;
@@ -1794,6 +1796,7 @@
         const errorDiv = document.getElementById('labelError');
         currentLabel = document.getElementById('labelName').value.trim();
         originalTabName = "";
+        currentConnId = "";
 
         if (!currentLabel) return;
 
@@ -2136,7 +2139,7 @@
             } else {
               showStatus('Error: ' + res.error, 'error');
             }
-          }).setupSpreadsheet(currentLabel, finalTabName, finalTargetUrl, headerConfigs, initialSyncOpt, originalTabName);
+          }).setupSpreadsheet(currentLabel, finalTabName, finalTargetUrl, headerConfigs, initialSyncOpt, originalTabName, null, currentConnId);
       }
 
       // ==========================================
@@ -2215,8 +2218,10 @@
         Object.keys(h.perUserCounts).forEach(function(email) {
           ul.appendChild(li(email + ': ' + h.perUserCounts[email] + ' connection(s)'));
         });
-        const byteBar = h.byteUsedPct + '% (' + h.byteSize + ' / ' + h.byteCap + ' bytes)';
-        ul.appendChild(li('Registry size: ' + byteBar));
+        const largestPct = Math.round((h.largestConnBytes / h.perConnCap) * 100);
+        ul.appendChild(li('Largest connection: ' + largestPct + '% (' + h.largestConnBytes + ' / ' + h.perConnCap + ' bytes)' + (h.largestConnTab ? ' — ' + h.largestConnTab : '')));
+        const totalPct = Math.round((h.totalStoreBytes / h.totalStoreCap) * 100);
+        ul.appendChild(li('Total store: ' + totalPct + '% (' + h.totalStoreBytes + ' / ' + h.totalStoreCap + ' bytes)'));
         ul.appendChild(li('processEmails trigger: ' + (h.hasTrigger ? 'active' : 'not set')));
         healthBox.appendChild(title);
         healthBox.appendChild(ul);

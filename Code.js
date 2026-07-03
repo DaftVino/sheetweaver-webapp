@@ -109,7 +109,7 @@ function recordConnectionRun(conn, result) {
   conn.lastRunStatus = result.status;
   conn.lastRunAt = new Date().toISOString();
   conn.lastRunReportId = result.reportId || null;
-  conn.lastError = result.error || null;
+  conn.lastError = result.error ? String(result.error).substring(0, 500) : null;
   conn.lastCounts = result.counts;
   conn.lastDurationMs = result.durationMs;
   if (result.bodyType) conn.lastBodyType = result.bodyType;
@@ -152,6 +152,7 @@ function getAdminDiagnostics() {
   const caller = getActiveEmail();
   if (!isAdmin(caller)) return { success: false, error: 'Not authorized.' };
   const props = PropertiesService.getScriptProperties();
+  _migrateRegistryIfNeeded(props);
   const index = JSON.parse(props.getProperty(DIAG_INDEX_KEY) || '[]');
   const events = index.map(function(id) {
     try {
@@ -159,12 +160,27 @@ function getAdminDiagnostics() {
       return raw ? JSON.parse(raw) : null;
     } catch(e) { return null; }
   }).filter(Boolean);
-  const registryRaw = props.getProperty(REGISTRY_KEY) || '[]';
-  const registry = JSON.parse(registryRaw);
-  const registryByteSize = registryRaw.length;
+  const registry = _readRegistry(props);
+  _flushCorruptShardLogs();
   const perUserCounts = {};
   registry.forEach(function(conn) {
     perUserCounts[conn.userEmail] = (perUserCounts[conn.userEmail] || 0) + 1;
+  });
+  const all = props.getProperties();
+  let largestConnBytes = 0;
+  let largestConnTab = '';
+  let totalStoreBytes = 0;
+  Object.keys(all).forEach(function(key) {
+    const entryBytes = key.length + all[key].length;
+    totalStoreBytes += entryBytes;
+    if (key.indexOf('capture_conn_') === 0 && entryBytes > largestConnBytes) {
+      largestConnBytes = entryBytes;
+      try {
+        largestConnTab = JSON.parse(all[key]).tabName || '';
+      } catch(e) {
+        largestConnTab = '';
+      }
+    }
   });
   return {
     authorized: true,
@@ -172,9 +188,11 @@ function getAdminDiagnostics() {
     registryHealth: {
       connectionCount: registry.length,
       perUserCounts: perUserCounts,
-      byteSize: registryByteSize,
-      byteCap: 9000,
-      byteUsedPct: Math.round(registryByteSize / 90),
+      largestConnBytes: largestConnBytes,
+      largestConnTab: largestConnTab,
+      perConnCap: 9000,
+      totalStoreBytes: totalStoreBytes,
+      totalStoreCap: 500000,
       hasTrigger: checkUserTrigger()
     }
   };
@@ -197,7 +215,9 @@ function logClientError(payload) {
 function getDebugSnapshot() {
   const email = getActiveEmail();
   const props = PropertiesService.getScriptProperties();
+  _migrateRegistryIfNeeded(props);
   const registry = _readRegistry(props);
+  _flushCorruptShardLogs();
   const myConns = registry
     .filter(function(c) { return c.userEmail === email; })
     .map(function(c) {
@@ -333,14 +353,151 @@ function enableUserTrigger() {
 }
 
 // ==========================================
-// REGISTRY HELPERS
+// REGISTRY HELPERS (sharded: one Script Property per connection)
 // ==========================================
-function _readRegistry(props) {
-  return JSON.parse(props.getProperty(REGISTRY_KEY) || '[]');
+const REGISTRY_SHARD_PREFIX = 'capture_conn_';
+const REGISTRY_BACKUP_KEY = 'capture_registry_backup_v1';
+
+// Corrupt shards found by _readRegistry are queued here rather than logged
+// inline, so a caller holding a lock never triggers logDiag's own internal
+// lock acquisition (undocumented GAS LockService reentrancy — see
+// issues/registry-sharding-implementation-plan.md amendment 1A). Call
+// _flushCorruptShardLogs() once any lock the caller holds has been released.
+let _pendingCorruptShardKeys = [];
+
+function _connKey(conn) {
+  return REGISTRY_SHARD_PREFIX + conn.id;
 }
 
-function _writeRegistry(props, registry) {
-  props.setProperty(REGISTRY_KEY, JSON.stringify(registry));
+function _connMatches(conn, email, tabName, url) {
+  return conn.userEmail === email && conn.tabName === tabName && conn.spreadsheetUrl === url;
+}
+
+function _writeConnection(props, conn) {
+  props.setProperty(_connKey(conn), JSON.stringify(conn));
+}
+
+function _deleteConnectionShard(props, conn) {
+  props.deleteProperty(_connKey(conn));
+}
+
+// Reads every capture_conn_* shard. If capture_registry (the pre-sharding
+// blob) is still present — migration hasn't run yet, or last attempted it
+// under lock contention — blob records with no matching shard are merged in
+// as a read-time fallback (D4); a blob record that DOES match an existing
+// shard defers to the shard (the same merge-only rule migration itself uses,
+// so a stale blob copy never shadows a live write). Corrupt shards are
+// skipped, not fatal (2A). Returns records sorted by (userEmail, tabName) so
+// the dashboard order is stable across reloads regardless of property
+// iteration order (D8).
+function _readRegistry(props) {
+  const all = props.getProperties();
+  const shardEntries = [];
+  Object.keys(all).forEach(function(key) {
+    if (key.indexOf(REGISTRY_SHARD_PREFIX) === 0) {
+      try {
+        shardEntries.push(JSON.parse(all[key]));
+      } catch(e) {
+        _pendingCorruptShardKeys.push(key);
+      }
+    }
+  });
+
+  let result = shardEntries;
+  if (Object.prototype.hasOwnProperty.call(all, REGISTRY_KEY)) {
+    try {
+      const blobRecords = JSON.parse(all[REGISTRY_KEY]);
+      blobRecords.forEach(function(blobConn) {
+        const hasShardMatch = shardEntries.some(function(s) {
+          return _connMatches(s, blobConn.userEmail, blobConn.tabName, blobConn.spreadsheetUrl);
+        });
+        if (!hasShardMatch) result.push(blobConn);
+      });
+    } catch(e) {
+      // Corrupt blob during a read-time fallback — migration is responsible
+      // for cleaning this up; reads simply ignore it rather than throw.
+    }
+  }
+
+  result.sort(function(a, b) {
+    if (a.userEmail !== b.userEmail) return a.userEmail < b.userEmail ? -1 : 1;
+    if (a.tabName !== b.tabName) return a.tabName < b.tabName ? -1 : 1;
+    return 0;
+  });
+  return result;
+}
+
+function _flushCorruptShardLogs() {
+  if (_pendingCorruptShardKeys.length === 0) return;
+  const keys = _pendingCorruptShardKeys.splice(0, _pendingCorruptShardKeys.length);
+  keys.forEach(function(key) {
+    logDiag('ERROR', '_readRegistry:corruptShard', { key: key });
+  });
+}
+
+// One-time, explicit, pre-lock migration from the legacy single-blob registry
+// to per-connection shards. Callers invoke this BEFORE acquiring their own
+// lock (1A) — migration acquires and fully releases its own lock, so there is
+// no nested lock acquisition. Merge-only (D3): a blob record whose identity
+// triple already matches an existing shard is dropped, never overwriting a
+// live shard — this is what makes a mixed-version deploy window (GAS trigger
+// running newly-pushed code while the web app still serves the previous
+// deployment) safe: the newer code's shard always wins. Returns
+// { ok: true } on success (including "nothing to migrate" and "already
+// migrated"), or { ok: false, lockFailed: true } if the lock could not be
+// acquired while the blob still exists — callers use this to distinguish a
+// genuine retry-later condition from success.
+function _migrateRegistryIfNeeded(props) {
+  if (props.getProperty(REGISTRY_KEY) === null) return { ok: true };
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) {
+    return { ok: false, lockFailed: true };
+  }
+
+  let corruptBlob = false;
+  try {
+    const raw = props.getProperty(REGISTRY_KEY);
+    if (raw === null) return { ok: true }; // migrated by another execution while we waited for the lock
+
+    let blobRecords;
+    try {
+      blobRecords = JSON.parse(raw);
+    } catch(e) {
+      // Corrupt blob (D5): preserve the raw text for forensics, delete the key
+      // so migration stops retrying, and continue with whatever shards exist.
+      props.setProperty(REGISTRY_BACKUP_KEY, raw);
+      props.deleteProperty(REGISTRY_KEY);
+      corruptBlob = true;
+      return { ok: true };
+    }
+
+    const all = props.getProperties();
+    const existingShards = [];
+    Object.keys(all).forEach(function(key) {
+      if (key.indexOf(REGISTRY_SHARD_PREFIX) === 0) {
+        try { existingShards.push(JSON.parse(all[key])); } catch(e) {}
+      }
+    });
+
+    blobRecords.forEach(function(conn) {
+      const hasShardMatch = existingShards.some(function(s) {
+        return _connMatches(s, conn.userEmail, conn.tabName, conn.spreadsheetUrl);
+      });
+      if (!hasShardMatch) {
+        conn.id = Utilities.getUuid();
+        props.setProperty(_connKey(conn), JSON.stringify(conn));
+      }
+      // else: a live shard already covers this identity — merge-only means it wins.
+    });
+
+    props.setProperty(REGISTRY_BACKUP_KEY, raw);
+    props.deleteProperty(REGISTRY_KEY);
+    return { ok: true };
+  } finally {
+    lock.releaseLock();
+    if (corruptBlob) logDiag('ERROR', '_migrateRegistryIfNeeded:corruptBlob', {});
+  }
 }
 
 // ==========================================
@@ -350,7 +507,9 @@ function getDashboardData() {
   try {
   const email = getActiveEmail();
   const props = PropertiesService.getScriptProperties();
+  _migrateRegistryIfNeeded(props);
   let registry = _readRegistry(props);
+  _flushCorruptShardLogs();
   let connections = [];
 
   registry.forEach(conn => {
@@ -411,16 +570,21 @@ function togglePauseConnection(tabName, url) {
   try {
     const activeEmail = getActiveEmail();
     const props = PropertiesService.getScriptProperties();
+    const migResult = _migrateRegistryIfNeeded(props);
+    if (!migResult.ok && migResult.lockFailed) {
+      return { success: false, error: 'Update in progress, please retry.' };
+    }
     const lock = LockService.getScriptLock();
     if (!lock.tryLock(5000)) return { success: false, error: 'Could not acquire lock.' };
     try {
       const registry = _readRegistry(props);
-      const conn = registry.find(c => c.tabName === tabName && c.spreadsheetUrl === url && c.userEmail === activeEmail);
+      const conn = registry.find(c => _connMatches(c, activeEmail, tabName, url));
       if (!conn) return { success: false, error: 'Not authorized.' };
       conn.isPaused = !conn.isPaused;
-      _writeRegistry(props, registry);
+      _writeConnection(props, conn);
     } finally {
       lock.releaseLock();
+      _flushCorruptShardLogs();
     }
 
     try {
@@ -450,15 +614,20 @@ function deleteConnection(tabName, url) {
   try {
     const activeEmail = getActiveEmail();
     const props = PropertiesService.getScriptProperties();
+    const migResult = _migrateRegistryIfNeeded(props);
+    if (!migResult.ok && migResult.lockFailed) {
+      return { success: false, error: 'Update in progress, please retry.' };
+    }
     const lock = LockService.getScriptLock();
     if (!lock.tryLock(5000)) return { success: false, error: 'Could not acquire lock.' };
     try {
       const registry = _readRegistry(props);
-      const conn = registry.find(c => c.tabName === tabName && c.spreadsheetUrl === url && c.userEmail === activeEmail);
+      const conn = registry.find(c => _connMatches(c, activeEmail, tabName, url));
       if (!conn) return { success: false, error: 'Not authorized.' };
-      _writeRegistry(props, registry.filter(c => !(c.tabName === tabName && c.spreadsheetUrl === url && c.userEmail === activeEmail)));
+      _deleteConnectionShard(props, conn);
     } finally {
       lock.releaseLock();
+      _flushCorruptShardLogs();
     }
 
     try {
@@ -481,13 +650,16 @@ function deleteConnection(tabName, url) {
 function repairConnection(tabName, url) {
   try {
     const activeEmail = getActiveEmail();
-    const registry = _readRegistry(PropertiesService.getScriptProperties());
-    const conn = registry.find(c => c.tabName === tabName && c.spreadsheetUrl === url && c.userEmail === activeEmail);
+    const props = PropertiesService.getScriptProperties();
+    _migrateRegistryIfNeeded(props);
+    const registry = _readRegistry(props);
+    _flushCorruptShardLogs();
+    const conn = registry.find(c => _connMatches(c, activeEmail, tabName, url));
     if (!conn) return { success: false, error: 'Connection not found in registry.' };
     if (!conn.headerConfigs) {
       return { success: false, error: "This is an older connection that didn't back up its rules. Please delete it and set it up as a new capture." };
     }
-    return setupSpreadsheet(conn.gmailLabel, conn.tabName, conn.spreadsheetUrl, conn.headerConfigs, conn.initialSync, null, true);
+    return setupSpreadsheet(conn.gmailLabel, conn.tabName, conn.spreadsheetUrl, conn.headerConfigs, conn.initialSync, null, true, conn.id);
   } catch(e) {
     return { success: false, error: e.toString() };
   }
@@ -496,8 +668,10 @@ function repairConnection(tabName, url) {
 function getEditConfig(tabName, url) {
   const activeEmail = getActiveEmail();
   const props = PropertiesService.getScriptProperties();
+  _migrateRegistryIfNeeded(props);
   const registry = _readRegistry(props);
-  const conn = registry.find(c => c.tabName === tabName && c.spreadsheetUrl === url && c.userEmail === activeEmail);
+  _flushCorruptShardLogs();
+  const conn = registry.find(c => _connMatches(c, activeEmail, tabName, url));
   if (!conn) {
     const reportId = logDiag('WARN', 'getEditConfig', { message: 'unauthorized access attempt', tabName: tabName, userEmail: activeEmail });
     return { success: false, error: 'Not authorized.', reportId: reportId };
@@ -556,6 +730,7 @@ function getEditConfig(tabName, url) {
 
     return {
       success: true,
+      id: conn.id,
       gmailLabel: gmailLabel,
       tabName: tabName,
       targetUrl: url,
@@ -721,7 +896,7 @@ function scanEmailForSuggestions(labelName) {
   }
 }
 
-function setupSpreadsheet(labelName, tabName, targetUrl, headerConfigs, initialSync, originalTabName, skipDefaultUpdate) {
+function setupSpreadsheet(labelName, tabName, targetUrl, headerConfigs, initialSync, originalTabName, skipDefaultUpdate, connId) {
   try {
     if (skipDefaultUpdate === undefined) skipDefaultUpdate = false;
     targetUrl = targetUrl || getUserDefaultSpreadsheetUrl();
@@ -731,6 +906,11 @@ function setupSpreadsheet(labelName, tabName, targetUrl, headerConfigs, initialS
     }
 
     const activeEmail = getActiveEmail();
+    const props = PropertiesService.getScriptProperties();
+    const migResult = _migrateRegistryIfNeeded(props);
+    if (!migResult.ok && migResult.lockFailed) {
+      return { success: false, error: 'Update in progress, please retry.' };
+    }
 
     const ss = SpreadsheetApp.openByUrl(targetUrl);
 
@@ -784,7 +964,6 @@ function setupSpreadsheet(labelName, tabName, targetUrl, headerConfigs, initialS
     });
     sheet.autoResizeColumns(1, names.length);
 
-    const props = PropertiesService.getScriptProperties();
     const sheetId = sheet.getSheetId();
     const lock = LockService.getScriptLock();
     if (!lock.tryLock(5000)) {
@@ -792,14 +971,39 @@ function setupSpreadsheet(labelName, tabName, targetUrl, headerConfigs, initialS
       return { success: false, error: 'Could not acquire lock, please retry.', reportId: reportId };
     }
     try {
-      let registry = _readRegistry(props);
-      const filterTabName = originalTabName ? originalTabName : tabName;
-      const existing = registry.find(c => c.tabName === filterTabName && c.spreadsheetUrl === targetUrl);
-      if (existing && existing.userEmail !== activeEmail) {
+      const registry = _readRegistry(props);
+
+      // Resolve which existing shard (if any) this save updates in place: by
+      // connId when the caller has one (edit/repair flows — survives tab
+      // rename AND target-URL changes with no ghost shard left behind, D9),
+      // else by the legacy identity-triple lookup (new-capture flow, or a
+      // caller that hasn't been updated to pass connId).
+      let existing = null;
+      if (connId) {
+        existing = registry.find(c => c.id === connId);
+        if (existing && existing.userEmail !== activeEmail) {
+          return { success: false, error: 'Not authorized.' };
+        }
+      }
+      if (!existing) {
+        const filterTabName = originalTabName ? originalTabName : tabName;
+        existing = registry.find(c => c.tabName === filterTabName && c.spreadsheetUrl === targetUrl && c.userEmail === activeEmail);
+      }
+
+      // Hijack / duplicate check (commit 1e6fc9f regression): does ANY OTHER
+      // connection already occupy this (tabName, targetUrl) combo? Excludes
+      // the record we're updating in place, if any.
+      const collision = registry.find(c => c.tabName === tabName && c.spreadsheetUrl === targetUrl && (!existing || c.id !== existing.id));
+      if (collision && collision.userEmail !== activeEmail) {
         return { success: false, error: 'A connection with this tab name already exists for another user on this sheet.' };
       }
-      registry = registry.filter(c => !(c.tabName === filterTabName && c.spreadsheetUrl === targetUrl && c.userEmail === activeEmail));
-      registry.push({
+
+      // Every save fully replaces the connection's fields (matches prior
+      // behavior — editing resets isPaused/lastSyncTime, same as before
+      // sharding); only conn.id is preserved across an edit, since the id is
+      // now the storage key and reusing it is what prevents an orphan shard.
+      const conn = {
+        id: existing ? existing.id : Utilities.getUuid(),
         userEmail: activeEmail,
         gmailLabel: labelName,
         tabName: tabName,
@@ -809,10 +1013,20 @@ function setupSpreadsheet(labelName, tabName, targetUrl, headerConfigs, initialS
         initialSync: initialSync || '50',
         lastSyncTime: null,
         headerConfigs: headerConfigs
-      });
-      _writeRegistry(props, registry);
+      };
+
+      // 9KB per-connection size guard (D6): sharding moves the GAS property
+      // cap from the whole registry to each connection: enforce it here
+      // rather than let a wide-column capture rediscover the old silent
+      // write failure at a new threshold.
+      if (JSON.stringify(conn).length >= 9000) {
+        return { success: false, error: 'This capture has too many columns/rules to save (limit ~9KB). Remove some columns.' };
+      }
+
+      _writeConnection(props, conn);
     } finally {
       lock.releaseLock();
+      _flushCorruptShardLogs();
     }
 
     let triggerEnabled = false;
@@ -1064,7 +1278,10 @@ function _processSingleConnection(conn, startTime, DEADLINE_MS, CURSOR_BATCH) {
   }
 }
 
-// Locked write-back: applies SyncResult data to the fresh registry and saves.
+// Locked write-back: applies SyncResult data to the fresh registry and writes
+// only the shards that actually changed this run (disjoint shards mean this
+// also removes the cross-user lost-update surface the single blob used to
+// have — a sync run for one connection can never clobber another's write).
 function _flushRegistryResults(props, syncResults) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(10000)) {
@@ -1074,28 +1291,32 @@ function _flushRegistryResults(props, syncResults) {
     });
     return;
   }
+  const writeFailures = [];
   try {
-    let freshRegistry = _readRegistry(props);
+    const freshRegistry = _readRegistry(props);
     freshRegistry.forEach(c => {
       const result = syncResults.find(u => u.tabName === c.tabName && u.url === c.spreadsheetUrl && u.userEmail === c.userEmail);
-      if (result) {
-        recordConnectionRun(c, result);
-        if (result.advanceSyncTime) c.lastSyncTime = result.syncTime;
-        if (result.nextCursor !== undefined) c.syncCursor = result.nextCursor;
+      if (!result) return;
+      recordConnectionRun(c, result);
+      if (result.advanceSyncTime) c.lastSyncTime = result.syncTime;
+      if (result.nextCursor !== undefined) c.syncCursor = result.nextCursor;
+      try {
+        _writeConnection(props, c);
+      } catch(e) {
+        // Most likely cause: this connection's serialized size exceeds the
+        // PropertiesService per-property size limit. Without this catch the
+        // exception would propagate out of processEmails() silently: every
+        // subsequent trigger run would re-scan the same window and hit the
+        // same failure with no diagnostic trail.
+        writeFailures.push({ tabName: c.tabName, errorClass: e.name, message: e.message });
       }
     });
-    try {
-      _writeRegistry(props, freshRegistry);
-    } catch(e) {
-      // Most likely cause: the registry blob exceeds the PropertiesService
-      // per-property size limit as connections/headerConfigs accumulate.
-      // Without this catch the exception would propagate out of processEmails()
-      // silently: every subsequent trigger run would re-scan the same window
-      // and hit the same failure with no diagnostic trail.
-      logDiag('ERROR', 'processEmails:flushWrite', { errorClass: e.name, message: e.message });
-    }
   } finally {
     lock.releaseLock();
+    _flushCorruptShardLogs();
+    writeFailures.forEach(function(f) {
+      logDiag('ERROR', 'processEmails:flushWrite', f);
+    });
   }
 }
 
@@ -1105,7 +1326,9 @@ function processEmails() {
   const startTime = Date.now();
   const activeEmail = getActiveEmail();
   const props = PropertiesService.getScriptProperties();
+  _migrateRegistryIfNeeded(props);
   const registry = _readRegistry(props);
+  _flushCorruptShardLogs();
   const syncResults = [];
 
   registry.forEach(conn => {
