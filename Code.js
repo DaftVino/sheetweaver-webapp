@@ -369,11 +369,33 @@ function _connKey(conn) {
   return REGISTRY_SHARD_PREFIX + conn.id;
 }
 
+// Real UTF-8 byte length of a string, without a Buffer/GAS-Blob dependency
+// (portable to both the V8-based Apps Script runtime and the Node test
+// harness). PropertiesService's per-property cap is byte-based; JS string
+// .length counts UTF-16 code units, which under-counts multi-byte UTF-8
+// characters.
+function _utf8ByteLength(str) {
+  return encodeURIComponent(str).replace(/%[0-9A-F]{2}/g, 'x').length;
+}
+
 function _connMatches(conn, email, tabName, url) {
   return conn.userEmail === email && conn.tabName === tabName && conn.spreadsheetUrl === url;
 }
 
 function _writeConnection(props, conn) {
+  if (!conn.id) {
+    // Ship pre-landing review (Claude adversarial subagent): a legacy blob
+    // record pulled in by _readRegistry's blob-fallback merge has no id yet
+    // (ids are assigned only by migration or setupSpreadsheet). Writing it
+    // here would call _connKey on an id-less object and collide on the fixed
+    // key "capture_conn_undefined" with any OTHER unmigrated connection
+    // written in the same window — silent cross-connection/cross-user data
+    // corruption under migration-lock contention (e.g. many 15-min triggers
+    // firing at once right after deploy). Refuse and let the caller's
+    // existing write-failure handling (writeFailures/logDiag) take over
+    // instead of writing to a shared key.
+    throw new Error('Refusing to write a connection with no id (unmigrated legacy record).');
+  }
   props.setProperty(_connKey(conn), JSON.stringify(conn));
 }
 
@@ -1089,8 +1111,13 @@ function setupSpreadsheet(labelName, tabName, targetUrl, headerConfigs, initialS
       // 9KB per-connection size guard (D6): sharding moves the GAS property
       // cap from the whole registry to each connection: enforce it here
       // rather than let a wide-column capture rediscover the old silent
-      // write failure at a new threshold.
-      if (JSON.stringify(conn).length >= MAX_CONN_BYTES) {
+      // write failure at a new threshold. Measure real UTF-8 byte length, not
+      // JS string .length (UTF-16 code units) — the PropertiesService cap is
+      // byte-based, and .length under-counts multi-byte characters (CJK tab
+      // names, emoji in labels/patterns), letting an oversized capture slip
+      // past this guard and hit the unguarded _writeConnection call below
+      // (ship pre-landing review, Claude adversarial subagent).
+      if (_utf8ByteLength(JSON.stringify(conn)) >= MAX_CONN_BYTES) {
         return { success: false, error: 'This capture has too many columns/rules to save (limit ~9KB). Remove some columns.' };
       }
 

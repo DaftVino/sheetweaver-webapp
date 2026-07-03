@@ -519,6 +519,42 @@ function checkWritePathEntryPoints(codeSource) {
     failures.push('9KB size guard: ' + e.message);
   }
 
+  // _utf8ByteLength: the size guard must measure real UTF-8 bytes, not JS
+  // string .length (UTF-16 code units), or multi-byte characters (CJK, emoji)
+  // slip past the guard undercounted (ship pre-landing review, Claude
+  // adversarial subagent).
+  try {
+    const ctx = makeShardedContext({});
+    vm.runInContext(codeSource, ctx);
+    const asciiLen = vm.runInContext("_utf8ByteLength('hello')", ctx);
+    check('_utf8ByteLength matches .length for pure ASCII', asciiLen === 5);
+    const cjkLen = vm.runInContext("_utf8ByteLength('日本語')", ctx);
+    check('_utf8ByteLength counts 3 bytes per CJK character, not 1 (UTF-16 .length would say 3, real UTF-8 is 9)', cjkLen === 9);
+  } catch (e) {
+    failures.push('_utf8ByteLength: ' + e.message);
+  }
+
+  // setupSpreadsheet's size guard must reject based on real UTF-8 bytes: a
+  // tabName packed with multi-byte characters can be small by .length but
+  // large by UTF-8 byte count.
+  try {
+    const propStore = {};
+    const ctx = makeShardedContext({ propStore, activeEmail: 'tester@example.com' });
+    vm.runInContext(codeSource, ctx);
+    const wideHeaderConfigs = [];
+    for (let i = 0; i < 200; i++) {
+      wideHeaderConfigs.push({ name: '列名' + i, pattern: '日本語のパターン文字列' + i, delimiter: 'newline', format: 'text' });
+    }
+    const result = vm.runInContext(
+      `setupSpreadsheet('宽标签', '宽标签页', 'https://wide', ${JSON.stringify(wideHeaderConfigs)}, '50', null, true)`,
+      ctx
+    );
+    check('setupSpreadsheet rejects a multi-byte-heavy record whose UTF-8 size exceeds the cap even though .length alone would not',
+      result && result.success === false && /too many columns\/rules/.test(result.error));
+  } catch (e) {
+    failures.push('9KB size guard UTF-8 byte counting: ' + e.message);
+  }
+
   // id-threaded edit flow: getEditConfig returns id; setupSpreadsheet updates
   // the SAME shard in place even when the target URL changes (D9).
   try {
@@ -679,6 +715,64 @@ function checkWritePathEntryPoints(codeSource) {
       !!flushFailureDiag && flushFailureDiag.tabName === 'FailOne' && flushFailureDiag.level === 'ERROR');
   } catch (e) {
     failures.push('_flushRegistryResults write-failure path: ' + e.message);
+  }
+
+  // REGRESSION (ship pre-landing review, Claude adversarial subagent):
+  // _writeConnection must refuse an id-less connection (an unmigrated legacy
+  // blob-fallback record) instead of writing it to the fixed, shared key
+  // "capture_conn_undefined" — which would silently collide with any other
+  // id-less connection written in the same migration-lock-contention window.
+  try {
+    const ctx = makeShardedContext({});
+    vm.runInContext(codeSource, ctx);
+    let threw = false;
+    let message = '';
+    try {
+      vm.runInContext(
+        "_writeConnection(PropertiesService.getScriptProperties(), { userEmail: 'a@example.com', tabName: 'NoId', spreadsheetUrl: 'https://x' })",
+        ctx
+      );
+    } catch (inner) {
+      threw = true;
+      message = String(inner.message || inner);
+    }
+    check('_writeConnection throws instead of writing an id-less connection', threw === true);
+    check('_writeConnection never creates a "capture_conn_undefined" key', message.length > 0);
+  } catch (e) {
+    failures.push('_writeConnection id-less guard: ' + e.message);
+  }
+
+  // _flushRegistryResults must handle an id-less legacy record (reachable via
+  // _readRegistry's blob-fallback merge when migration hasn't completed) the
+  // same way it handles any other write failure: skip, log, and leave every
+  // other shard's write unaffected.
+  try {
+    const connGood = { id: 'flush-good', userEmail: 'tester@example.com', tabName: 'GoodOne', spreadsheetUrl: 'https://x' };
+    const legacyBlobConn = { userEmail: 'tester@example.com', tabName: 'LegacyOne', spreadsheetUrl: 'https://y' };
+    const propStore = {
+      'capture_conn_flush-good': JSON.stringify(connGood),
+      capture_registry: JSON.stringify([legacyBlobConn])
+    };
+    const ctx = makeShardedContext({ propStore });
+    vm.runInContext(codeSource, ctx);
+    let threw = false;
+    try {
+      vm.runInContext(
+        `_flushRegistryResults(PropertiesService.getScriptProperties(), [
+          { tabName: 'GoodOne', url: 'https://x', userEmail: 'tester@example.com', status: 'ok', reportId: 'rg', counts: { scanned: 1, new: 1, updated: 0 }, durationMs: 5, advanceSyncTime: true, syncTime: 111 },
+          { tabName: 'LegacyOne', url: 'https://y', userEmail: 'tester@example.com', status: 'ok', reportId: 'rl', counts: { scanned: 1, new: 1, updated: 0 }, durationMs: 5, advanceSyncTime: true, syncTime: 222 }
+        ])`,
+        ctx
+      );
+    } catch (inner) {
+      threw = true;
+    }
+    check('_flushRegistryResults does not propagate when a legacy id-less record is in the flush', threw === false);
+    check('_flushRegistryResults never creates a capture_conn_undefined key', propStore['capture_conn_undefined'] === undefined);
+    const goodUpdated = JSON.parse(propStore['capture_conn_flush-good']);
+    check('_flushRegistryResults still writes the properly-shard-backed connection', goodUpdated.lastRunStatus === 'ok' && goodUpdated.lastSyncTime === 111);
+  } catch (e) {
+    failures.push('_flushRegistryResults id-less legacy record: ' + e.message);
   }
 }
 
