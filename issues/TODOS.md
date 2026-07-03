@@ -38,14 +38,10 @@
 
 **Depends on / blocked by:** registry sharding (Phase 1) landing first; a decision on how repair works without the registry copy.
 
-## Deferred from /ship pre-landing review (2026-06-30)
+## Completed
 
 ### Test coverage for lock-acquire-failure paths in togglePauseConnection/deleteConnection
 
 **What:** `scripts/local-verify.js` has no check that `togglePauseConnection`/`deleteConnection` return `{success:false, error:'Could not acquire lock.'}` (and leave the registry unmodified) when `LockService.getScriptLock().tryLock()` fails.
 
-**Why:** This is the same class of bug just fixed for `setupSpreadsheet` in commit 6b1366d ("silently reported success on lock-acquire failure"). A future refactor could silently drop the `tryLock` guard in these two functions and nothing would catch it.
-
-**Priority:** P1
-
-**Context:** Flagged by the testing specialist during /ship's pre-landing review (2026-06-30). Deferred rather than fixed inline to keep that ship run focused — the isAdmin/response-shape/localStorage-convention checks were added instead as the higher-value, cheaper wins from the same review pass.
+**Completed:** v2.1.0 (2026-07-03) — added as part of the registry sharding work (which touched both functions anyway); shards are confirmed unmodified on lock failure.
