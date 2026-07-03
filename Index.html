@@ -1203,12 +1203,13 @@
         }
       }
 
-      function _makeActionBtn(label, extraClass, ariaLabel, handler) {
+      function _makeActionBtn(label, extraClass, ariaLabel, handler, titleText) {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'action-btn' + (extraClass ? ' ' + extraClass : '');
         btn.textContent = label;
         btn.setAttribute('aria-label', ariaLabel);
+        if (titleText) btn.title = titleText;
         btn.addEventListener('click', handler);
         return btn;
       }
