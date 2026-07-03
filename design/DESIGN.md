@@ -32,7 +32,7 @@ is the thread.
 - **C64 (retro):** grey-beige case palette — card `#d8d5c8`, primary brown `#7b5a3a`, rainbow badge stripe, radius zeroed (blocky corners are identity).
 - **Semantic triads:** success/warning/danger each carry bg + text + border tokens per theme; buttons carry `--on-*` text tokens. Use the triads, never approximate.
 - **Dark mode strategy:** Torres redesigns surfaces (not inverted Solar); saturation reduced, shadows go black-based.
-- **Reserved (future):** `--thread` — Solar `#2dd4bf`, Torres `#5eead4`, C64 `#b9432f`. Exclusively for "data in motion" (active syncs, progress, the loom animation). Never on buttons.
+- **`--thread`:** Solar `#2dd4bf`, Torres `#5eead4`, C64 `#b9432f`. Token exists in `:root`/theme overrides (Loom A); not yet consumed by any element — reserved exclusively for "data in motion" (active syncs, progress, the loom animation). Never on buttons.
 
 ## Spacing
 - **Base unit:** 4px. Scale: --space-1(4) 2(8) 3(12) 4(16) 5(20) 6(24) 8(32).
@@ -47,7 +47,7 @@ is the thread.
 
 ## Motion
 - **Approach:** Minimal-functional. Transitions only where they aid comprehension (hover, theme switch, focus).
-- **Durations:** fast 120ms (hovers, small state), base 180ms (background/theme shifts). NES button press is 80ms — the snap is the personality. (Tokenizing these as `--duration-fast`/`--duration-base` is an approved-but-unapplied refinement.)
+- **Durations:** fast 120ms (hovers, small state), base 180ms (background/theme shifts), tokenized as `--duration-fast`/`--duration-base`. NES button press stays a literal 80ms — the snap is the personality, intentionally not tokenized.
 - **Easing:** `ease` throughout; no springs, no choreography.
 - **Reduced motion:** `prefers-reduced-motion: reduce` guard exists and must be preserved for any new animation.
 - **Loading:** skeleton shimmer (1.6s loop) for table loads.
