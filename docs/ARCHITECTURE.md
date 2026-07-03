@@ -46,7 +46,7 @@ User fills form
   → google.script.run.setupSpreadsheet(...)
       → Open/create sheet tab
       → Write header row with embedded rule metadata (as cell notes)
-      → Append entry to capture_registry in PropertiesService
+      → Write connection to its own `capture_conn_<id>` Script Property (sharded registry)
       → If initialSync requested: processEmails() for this connection
 ```
 
@@ -55,7 +55,7 @@ User fills form
 ```
 ScriptApp time trigger fires every 15 min (per user)
   → processEmails()
-      → Read capture_registry → filter to current user's connections
+      → Read all `capture_conn_*` shards (migrating the legacy `capture_registry` blob first, if still present) → filter to current user's connections
       → For each connection:
           → GmailApp.search(label, after:lastRunTimestamp)
           → For each matching email:
@@ -69,7 +69,8 @@ ScriptApp time trigger fires every 15 min (per user)
 ```
 User opens app → loadDashboard()
   → google.script.run.getDashboardData()
-      → Read capture_registry
+      → Migrate legacy capture_registry blob into capture_conn_* shards, if still present
+      → Read all capture_conn_* shards
       → For each connection: check if tab still exists
       → Return connection list with health status
   → Render table with Edit / Pause / Delete / Repair actions
@@ -79,18 +80,19 @@ User opens app → loadDashboard()
 
 | Store | Mechanism | What's Stored | Limits |
 |-------|-----------|---------------|--------|
-| Connection registry | `PropertiesService.getScriptProperties()` key `capture_registry` | JSON array of all connections (all users) | ~9 KB per property value |
+| Connection registry | `PropertiesService.getScriptProperties()`, one key per connection: `capture_conn_<id>` | One JSON object per Gmail→Sheet connection (sharded; legacy single-blob `capture_registry` key is migrated in place on first read/write after upgrade) | ~9 KB per connection (`MAX_CONN_BYTES`); ~500 KB total across all Script Properties for the project |
 | Extraction rules | Cell notes on header row of each sheet tab | Field name, pattern, delimiter, format per column | None in practice |
 | User default sheet URL | `PropertiesService.getUserProperties()` key `user_default_spreadsheet_url` | Per-user fallback sheet | Isolated per user |
 | UI theme | `PropertiesService.getUserProperties()` key `ui_theme` | `solar` / `torres` / `nes` | Isolated per user |
 
 ### Registry Structure
 
-Each entry in the `capture_registry` array represents one Gmail→Sheet connection. Fields are written at different points in the lifecycle:
+Each `capture_conn_<id>` Script Property holds one JSON object representing a single Gmail→Sheet connection (`id` is a UUID assigned at creation, or during migration for connections created before sharding). Fields are written at different points in the lifecycle:
 
 **Set at connection creation** (`setupSpreadsheet`):
 ```json
 {
+  "id": "3fa1c2e0-...",
   "userEmail": "user@domain.com",
   "gmailLabel": "Ops/Invoices",
   "tabName": "Invoices Q1",
@@ -125,7 +127,7 @@ Each entry in the `capture_registry` array represents one Gmail→Sheet connecti
 - `lastSyncTime` — Unix timestamp (seconds) of when the initial backfill completed. Once set, incremental syncs use `after:lastSyncTime - 86400` instead of the initial strategy.
 - `syncCursor` — batch offset for `initialSync: 'all'` multi-run backfills. `null` when not in progress.
 
-The registry is a single shared JSON blob stored in one Script Property. All users read and write the same key. `LockService.getScriptLock()` is acquired for all registry writes to prevent concurrent corruption.
+The registry is sharded: each connection is its own Script Property (`capture_conn_<id>`), so one connection's write cannot corrupt or resize another's, and the per-property ~9 KB GAS cap applies per connection instead of to the whole registry. Older deployments may still have the legacy single-blob `capture_registry` key; `_migrateRegistryIfNeeded` migrates it into shards (merge-only — a blob record is dropped if a shard with the same identity already exists) the first time any registry read or write path runs after upgrade, then deletes the blob key. All users still read and write the same Script Properties store. `LockService.getScriptLock()` is acquired for the migration and for all registry writes to prevent concurrent corruption.
 
 ## Frontend Architecture
 
@@ -144,7 +146,7 @@ Navigation is handled by `nextStep(n)` and `loadDashboard()`. There is no client
 
 ## Concurrency
 
-- **LockService (`getScriptLock`)** protects all writes to `capture_registry`. Lock-guarded paths: `togglePauseConnection`, `deleteConnection`, `setupSpreadsheet` (registry portion), and `_flushRegistryResults` (called from `processEmails`).
+- **LockService (`getScriptLock`)** protects all writes to registry shards (`capture_conn_*`) and the one-time legacy-blob migration. Lock-guarded paths: `_migrateRegistryIfNeeded`, `togglePauseConnection`, `deleteConnection`, `setupSpreadsheet` (registry portion), and `_flushRegistryResults` (called from `processEmails`).
 - **Per-user triggers** mean concurrent `processEmails()` calls from different users do not share a lock — each user's run is fully independent.
 - `repairConnection` delegates to `setupSpreadsheet` (which acquires its own lock internally) and therefore needs no lock of its own.
 - No locking around sheet writes; each connection writes to a distinct tab, so tab-level collisions are not possible within a single user's run.
@@ -196,7 +198,8 @@ The capture pipeline normalizes email bodies before extraction: it detects HTML-
 | Constraint | Value | Impact |
 |-----------|-------|--------|
 | Apps Script max execution time | 6 minutes | First-sync of large labels may be killed mid-run |
-| PropertiesService value size | ~9 KB | Registry caps out at roughly 50–100 connections |
+| PropertiesService value size | ~9 KB per property | Enforced per connection (`MAX_CONN_BYTES`) now that the registry is sharded, so one oversized connection no longer blocks others from saving |
+| PropertiesService total store size | ~500 KB per script | Shared across all Script Properties (registry shards, diagnostics, admin settings) — User Properties (per-user theme, default sheet URL) are a separate store and don't count against this cap; reported as `totalStoreBytes` / `totalStoreCap` in Admin Diagnostics |
 | `GmailApp.search()` results | 500 per call | Very large label backlogs require pagination |
 | Trigger quota | 20 triggers per user per script | Not a current concern; one trigger per user |
 | `HtmlService` output size | 50 MB | Not a current concern |
