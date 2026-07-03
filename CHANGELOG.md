@@ -18,7 +18,8 @@ every user on this deployment.
 ### Changed
 - The connection registry moved from a single Script Property (capped at 9KB total, shared by
   every user) to one property per connection — the practical ceiling goes from ~9 connections to
-  roughly 100-200, bound by Google's daily quota rather than the old hard cap.
+  roughly 100-200, bound by the ~500KB total Script Properties storage cap rather than the old
+  9KB-per-registry hard cap.
 - Editing a capture's target Google Sheet URL now updates the same connection in place instead
   of silently creating a duplicate.
 - Existing registries migrate automatically and losslessly on first load after this update; the
