@@ -808,6 +808,144 @@ function checkReadEntryPointMigration(codeSource) {
 }
 
 // ==========================================
+// Loom B: rows-woven counter + dashboard fields (ship coverage audit gap —
+// Phase 3 diff had zero assertions on _getIntProp, the counter write path,
+// or the two new getDashboardData fields before this).
+// ==========================================
+function checkLoomBHelpers(codeSource) {
+  try {
+    const ctx = makeShardedContext({});
+    vm.runInContext(codeSource, ctx);
+    const absent = vm.runInContext("_getIntProp(PropertiesService.getScriptProperties(), 'nope')", ctx);
+    check('_getIntProp returns 0 when the key is absent', absent === 0);
+    const propStore = { loom_total_rows_woven: '42' };
+    const ctxValid = makeShardedContext({ propStore });
+    vm.runInContext(codeSource, ctxValid);
+    const valid = vm.runInContext("_getIntProp(PropertiesService.getScriptProperties(), 'loom_total_rows_woven')", ctxValid);
+    check('_getIntProp parses a valid integer string', valid === 42);
+    const propStoreGarbage = { loom_total_rows_woven: 'not-a-number' };
+    const ctxGarbage = makeShardedContext({ propStore: propStoreGarbage });
+    vm.runInContext(codeSource, ctxGarbage);
+    const garbage = vm.runInContext("_getIntProp(PropertiesService.getScriptProperties(), 'loom_total_rows_woven')", ctxGarbage);
+    check('_getIntProp falls back to 0 on a non-numeric stored value', garbage === 0);
+  } catch (e) {
+    failures.push('_getIntProp: ' + e.message);
+  }
+
+  try {
+    const conn = { id: 'loom-b', userEmail: 'tester@example.com', tabName: 'RowsTab', spreadsheetUrl: 'https://x' };
+    const propStore = { 'capture_conn_loom-b': JSON.stringify(conn), loom_total_rows_woven: '10' };
+    const ctx = makeShardedContext({ propStore });
+    vm.runInContext(codeSource, ctx);
+    vm.runInContext(
+      `_flushRegistryResults(PropertiesService.getScriptProperties(), [{ tabName: 'RowsTab', url: 'https://x', userEmail: 'tester@example.com', status: 'ok', reportId: 'r1', counts: { scanned: 5, new: 3, updated: 0 }, durationMs: 5, advanceSyncTime: true, syncTime: 999 }])`,
+      ctx
+    );
+    check('_flushRegistryResults increments the rows-woven counter by the sum of counts.new', propStore.loom_total_rows_woven === '13');
+  } catch (e) {
+    failures.push('rows-woven counter increment: ' + e.message);
+  }
+
+  try {
+    const conn1 = { id: 'loom-multi-1', userEmail: 'tester@example.com', tabName: 'TabA', spreadsheetUrl: 'https://x' };
+    const conn2 = { id: 'loom-multi-2', userEmail: 'tester@example.com', tabName: 'TabB', spreadsheetUrl: 'https://x' };
+    const propStore = {
+      'capture_conn_loom-multi-1': JSON.stringify(conn1),
+      'capture_conn_loom-multi-2': JSON.stringify(conn2),
+      loom_total_rows_woven: '0'
+    };
+    const ctx = makeShardedContext({ propStore });
+    vm.runInContext(codeSource, ctx);
+    vm.runInContext(
+      `_flushRegistryResults(PropertiesService.getScriptProperties(), [
+        { tabName: 'TabA', url: 'https://x', userEmail: 'tester@example.com', status: 'ok', reportId: 'r1', counts: { scanned: 5, new: 3, updated: 0 }, durationMs: 5, advanceSyncTime: true, syncTime: 999 },
+        { tabName: 'TabB', url: 'https://x', userEmail: 'tester@example.com', status: 'ok', reportId: 'r2', counts: { scanned: 2, new: 2, updated: 0 }, durationMs: 5, advanceSyncTime: true, syncTime: 999 }
+      ])`,
+      ctx
+    );
+    check('_flushRegistryResults sums counts.new across multiple connections in one flush (pre-landing review finding)', propStore.loom_total_rows_woven === '5');
+  } catch (e) {
+    failures.push('rows-woven counter multi-connection sum: ' + e.message);
+  }
+
+  try {
+    const conn = { id: 'loom-b0', userEmail: 'tester@example.com', tabName: 'ZeroTab', spreadsheetUrl: 'https://x' };
+    const propStore = { 'capture_conn_loom-b0': JSON.stringify(conn), loom_total_rows_woven: '7' };
+    const ctx = makeShardedContext({ propStore });
+    vm.runInContext(codeSource, ctx);
+    vm.runInContext(
+      `_flushRegistryResults(PropertiesService.getScriptProperties(), [{ tabName: 'ZeroTab', url: 'https://x', userEmail: 'tester@example.com', status: 'ok', reportId: 'r2', counts: { scanned: 5, new: 0, updated: 0 }, durationMs: 5, advanceSyncTime: true, syncTime: 999 }])`,
+      ctx
+    );
+    check('_flushRegistryResults does not write the counter when no new rows were found', propStore.loom_total_rows_woven === '7');
+  } catch (e) {
+    failures.push('rows-woven counter no-op: ' + e.message);
+  }
+
+  try {
+    const conn = { id: 'loom-bf', userEmail: 'tester@example.com', tabName: 'FailCounterTab', spreadsheetUrl: 'https://x' };
+    const propStore = { 'capture_conn_loom-bf': JSON.stringify(conn), loom_total_rows_woven: '5' };
+    const ctx = makeShardedContext({ propStore });
+    const originalGetScriptProperties = ctx.PropertiesService.getScriptProperties;
+    ctx.PropertiesService.getScriptProperties = function() {
+      const real = originalGetScriptProperties();
+      return Object.assign({}, real, {
+        setProperty: function(k, v) {
+          if (k === 'loom_total_rows_woven') throw new Error('quota exceeded');
+          real.setProperty(k, v);
+        }
+      });
+    };
+    vm.runInContext(codeSource, ctx);
+    let threw = false;
+    try {
+      vm.runInContext(
+        `_flushRegistryResults(PropertiesService.getScriptProperties(), [{ tabName: 'FailCounterTab', url: 'https://x', userEmail: 'tester@example.com', status: 'ok', reportId: 'r3', counts: { scanned: 5, new: 4, updated: 0 }, durationMs: 5, advanceSyncTime: true, syncTime: 999 }])`,
+        ctx
+      );
+    } catch (inner) {
+      threw = true;
+    }
+    check('_flushRegistryResults does not propagate when the counter write throws (fail-silent by design)', threw === false);
+    const updatedConn = JSON.parse(propStore['capture_conn_loom-bf']);
+    check('_flushRegistryResults still writes the connection shard when only the counter write fails', updatedConn.lastRunStatus === 'ok');
+  } catch (e) {
+    failures.push('rows-woven counter write-failure path: ' + e.message);
+  }
+
+  try {
+    const conn = { id: 'loom-b2', userEmail: 'tester@example.com', tabName: 'DashFieldsTab', spreadsheetUrl: 'https://x' };
+    const propStore = { 'capture_conn_loom-b2': JSON.stringify(conn), loom_total_rows_woven: '99' };
+    const ctx = makeShardedContext({ propStore, activeEmail: 'tester@example.com' });
+    vm.runInContext(codeSource, ctx);
+    const data = vm.runInContext('getDashboardData()', ctx);
+    check('getDashboardData exposes totalRowsWoven from the loom_total_rows_woven property', data.totalRowsWoven === 99);
+    check('getDashboardData exposes triggerIntervalMinutes matching TRIGGER_INTERVAL_MINUTES', data.triggerIntervalMinutes === 15);
+  } catch (e) {
+    failures.push('getDashboardData Loom B fields: ' + e.message);
+  }
+
+  // Pre-landing review finding: getDashboardData().triggerIntervalMinutes (the
+  // displayed cadence) was tested, but the actual scheduled cadence passed to
+  // ScriptApp's trigger builder never was — a regression that desyncs the two
+  // would pass every other test.
+  try {
+    const ctx = makeShardedContext({});
+    vm.runInContext(codeSource, ctx);
+    let capturedInterval = null;
+    ctx.ScriptApp.newTrigger = () => ({
+      timeBased: () => ({
+        everyMinutes: (n) => { capturedInterval = n; return { create: () => {} }; }
+      })
+    });
+    vm.runInContext('enableUserTrigger()', ctx);
+    check('enableUserTrigger schedules processEmails using TRIGGER_INTERVAL_MINUTES (not a stray literal)', capturedInterval === 15);
+  } catch (e) {
+    failures.push('enableUserTrigger interval wiring: ' + e.message);
+  }
+}
+
+// ==========================================
 // repairConnection threads conn.id through to setupSpreadsheet (D9) so a
 // repair updates the same shard in place rather than creating a new one.
 // ==========================================
@@ -1153,6 +1291,27 @@ function checkPhase4Helpers(htmlSrc) {
   check('Phase 4: conn.userEmail never assigned directly via innerHTML', !dangerousEmailInHTML.test(htmlSrc));
 }
 
+// REGRESSION (red-team pre-landing review, 2026-07-03): runWeave()'s double-fire
+// guard used to call the combined _weaveTeardown(), which reveals the success
+// title as a side effect — on every normal (non-double-fire) save this made the
+// title visible at t=0, ~2.6s before the weave animation actually finishes,
+// defeating the "resolves into the title" design. Statically verify the guard
+// calls the DOM-only _weaveClearStaleDom() instead, and that that function never
+// touches weave-pending/successTitle (no DOM/browser harness exists to run this
+// behaviorally — see the Loom B/C client-side coverage gap noted elsewhere).
+function checkWeaveTeardownSplit(htmlSrc) {
+  check('Index.html defines _weaveClearStaleDom (DOM-only teardown, no title reveal)',
+    /function _weaveClearStaleDom\s*\(/.test(htmlSrc));
+
+  const clearStaleDomBody = htmlSrc.match(/function _weaveClearStaleDom\s*\([^)]*\)\s*\{([\s\S]*?)\n      \}/);
+  check('_weaveClearStaleDom never references weave-pending or successTitle',
+    !!clearStaleDomBody && !/weave-pending|successTitle/.test(clearStaleDomBody[1]));
+
+  const doubleFireGuardRegion = htmlSrc.match(/Double-fire guard:[\s\S]{0,300}/);
+  check('runWeave()\'s double-fire guard calls _weaveClearStaleDom(), not the title-revealing _weaveTeardown()',
+    !!doubleFireGuardRegion && /_weaveClearStaleDom\s*\(\s*\)/.test(doubleFireGuardRegion[0]) && !/[^_]_weaveTeardown\s*\(\s*\)/.test(doubleFireGuardRegion[0]));
+}
+
 const requiredFiles = [
   'Code.js',
   'Index.html',
@@ -1193,6 +1352,7 @@ checkIsAdmin(codeSource);
 checkAdminUnauthorizedShape(codeSource);
 checkRegistryOwnership(codeSource);
 checkReadEntryPointMigration(codeSource);
+checkLoomBHelpers(codeSource);
 checkRepairConnectionIdThreading(codeSource);
 
 const htmlSource = read('Index.html');
@@ -1202,6 +1362,7 @@ inlineScripts.forEach((script, index) => {
   checkScriptSyntax(`Index.html <script #${index + 1}>`, script);
 });
 checkPhase4Helpers(htmlSource);
+checkWeaveTeardownSplit(htmlSource);
 checkLocalStorageConvention(htmlSource);
 
 // Phase 4 (branding): branding presence checks
