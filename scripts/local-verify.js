@@ -531,6 +531,37 @@ function checkWritePathEntryPoints(codeSource) {
     failures.push('admin health shape: ' + e.message);
   }
 
+  // largestConnBytes/-Tab selection across MULTIPLE shards — previously only
+  // ever exercised with a single shard, so the actual max-comparison branch
+  // (entryBytes > largestConnBytes) was never proven to pick correctly
+  // rather than being coincidentally right with nothing to compare against
+  // (ship coverage audit gap). The largest shard is inserted FIRST so the
+  // comparison must correctly reject the smaller shards that follow it,
+  // not just track "whatever came last".
+  try {
+    const connBig = { id: 'big', userEmail: 'a@example.com', tabName: 'BiggestOne', spreadsheetUrl: 'https://x', headerConfigs: [{ name: 'H1' }, { name: 'H2' }, { name: 'H3' }, { name: 'H4' }] };
+    const connMedium = { id: 'medium', userEmail: 'a@example.com', tabName: 'Medium', spreadsheetUrl: 'https://x', headerConfigs: [{ name: 'H' }] };
+    const connSmall = { id: 'small', userEmail: 'a@example.com', tabName: 'Small', spreadsheetUrl: 'https://x' };
+    const propStore = {
+      admin_email: 'admin@example.com',
+      diag_index: '[]',
+      capture_conn_big: JSON.stringify(connBig),
+      capture_conn_medium: JSON.stringify(connMedium),
+      capture_conn_small: JSON.stringify(connSmall)
+    };
+    const ctx = makeShardedContext({ propStore, activeEmail: 'admin@example.com' });
+    vm.runInContext(codeSource, ctx);
+    const diag = vm.runInContext('getAdminDiagnostics()', ctx);
+    const h = diag.registryHealth;
+    const expectedLargestBytes = 'capture_conn_big'.length + propStore.capture_conn_big.length;
+    check('registryHealth picks the correct largest connection across multiple shards',
+      h.largestConnTab === 'BiggestOne' && h.largestConnBytes === expectedLargestBytes);
+    check('registryHealth does not let a smaller shard scanned later override the largest',
+      h.largestConnTab !== 'Small' && h.largestConnTab !== 'Medium');
+  } catch (e) {
+    failures.push('registryHealth multi-shard largest-connection selection: ' + e.message);
+  }
+
   // REGRESSION: _flushRegistryResults used to rewrite the whole registry blob
   // on every processEmails run; sharding changed this to selective per-shard
   // writes. With two connections and a sync result for only one, the other
@@ -556,6 +587,56 @@ function checkWritePathEntryPoints(codeSource) {
       propStore['capture_conn_flush-b'] === untouchedSnapshot);
   } catch (e) {
     failures.push('_flushRegistryResults selective write: ' + e.message);
+  }
+
+  // WRITE-FAILURE PATH: the inner try/catch around _writeConnection() (Code.js
+  // comment: "Most likely cause: this connection's serialized size exceeds
+  // the PropertiesService per-property size limit") was never forced to
+  // actually throw. Force one shard's write to fail and verify (a) the
+  // sibling shard's write still lands, (b) the error does not propagate out
+  // of _flushRegistryResults, and (c) the failure is logged via
+  // logDiag('ERROR', 'processEmails:flushWrite', ...) (ship coverage audit gap).
+  try {
+    const connGood = { id: 'flush-c', userEmail: 'tester@example.com', tabName: 'GoodOne', spreadsheetUrl: 'https://x' };
+    const connBad = { id: 'flush-fail', userEmail: 'tester@example.com', tabName: 'FailOne', spreadsheetUrl: 'https://x' };
+    const propStore = {
+      'capture_conn_flush-c': JSON.stringify(connGood),
+      'capture_conn_flush-fail': JSON.stringify(connBad)
+    };
+    const ctx = makeShardedContext({ propStore });
+    const originalGetScriptProperties = ctx.PropertiesService.getScriptProperties;
+    ctx.PropertiesService.getScriptProperties = function() {
+      const real = originalGetScriptProperties();
+      return Object.assign({}, real, {
+        setProperty: function(k, v) {
+          if (k === 'capture_conn_flush-fail') throw new RangeError('Value is too large: ' + k);
+          real.setProperty(k, v);
+        }
+      });
+    };
+    vm.runInContext(codeSource, ctx);
+    let threw = false;
+    try {
+      vm.runInContext(
+        `_flushRegistryResults(PropertiesService.getScriptProperties(), [
+          { tabName: 'GoodOne', url: 'https://x', userEmail: 'tester@example.com', status: 'ok', reportId: 'rg', counts: { scanned: 1, new: 1, updated: 0 }, durationMs: 5, advanceSyncTime: true, syncTime: 111 },
+          { tabName: 'FailOne', url: 'https://x', userEmail: 'tester@example.com', status: 'ok', reportId: 'rf', counts: { scanned: 1, new: 1, updated: 0 }, durationMs: 5, advanceSyncTime: true, syncTime: 222 }
+        ])`,
+        ctx
+      );
+    } catch (inner) {
+      threw = true;
+    }
+    check('_flushRegistryResults does not propagate a per-shard write error out of the flush (own try/catch holds)', threw === false);
+    const goodUpdated = JSON.parse(propStore['capture_conn_flush-c']);
+    check('_flushRegistryResults writes the sibling shard even when another shard write throws',
+      goodUpdated.lastRunStatus === 'ok' && goodUpdated.lastSyncTime === 111);
+    const diagEntries = Object.keys(propStore).filter(k => k.indexOf('diag_') === 0).map(k => JSON.parse(propStore[k]));
+    const flushFailureDiag = diagEntries.find(d => d.where === 'processEmails:flushWrite');
+    check('_flushRegistryResults logs the write failure via logDiag(ERROR, processEmails:flushWrite, ...)',
+      !!flushFailureDiag && flushFailureDiag.tabName === 'FailOne' && flushFailureDiag.level === 'ERROR');
+  } catch (e) {
+    failures.push('_flushRegistryResults write-failure path: ' + e.message);
   }
 }
 
