@@ -50,7 +50,9 @@ This screen is called **Configure Spreadsheet Data**. Here you:
 ### Step 3 — Save
 
 Look over your setup and click **Save**. SheetWeaver creates a sync that runs on
-its own every 15 minutes. You see a **Success!** message when it is done.
+its own every 15 minutes. You see a **Success!** message when it is done, with a
+brief thread-weave animation to mark the new connection (shown once, and skipped
+automatically if you have reduced motion enabled).
 
 ---
 
@@ -81,6 +83,9 @@ The dashboard lists your captures under **Active Connections**:
 | Actions | Edit, pause, delete, or repair this capture |
 
 The sync runs all your captures on its own every 15 minutes.
+
+Below the table, a status line shows when the next sync will run and how many
+rows have been added across all your captures since you first set up SheetWeaver.
 
 ---
 
