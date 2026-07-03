@@ -789,7 +789,7 @@
       </div>
 
       <div id="step-1" class="step">
-        <button class="secondary-btn" onclick="loadDashboard()">&#8592; Back<span class="nav-long-text"> to Dashboard</span></button>
+        <button class="secondary-btn" onclick="loadDashboard()">&#8592; Back<span class="nav-long-text"> to the Loom</span></button>
         <br>
         <label for="labelName">Enter the Gmail Label name to capture:</label>
         <input style="width:100%" type="text" id="labelName" placeholder="Label Name">
@@ -798,7 +798,7 @@
       </div>
 
       <div id="step-2" class="step">
-        <button class="secondary-btn" onclick="loadDashboard()">&#8592; Back<span class="nav-long-text"> to Dashboard</span></button>
+        <button class="secondary-btn" onclick="loadDashboard()">&#8592; Back<span class="nav-long-text"> to the Loom</span></button>
         <br>
         
         <h3 style="margin-top:0;">Configure Spreadsheet Data</h3>
@@ -816,7 +816,7 @@
           </div>
           
           <div style="flex: 0.8; min-width: 140px;">
-            <label class="section-label" for="initialSync">First Sync Fetch</label>
+            <label class="section-label" for="initialSync">First Weave</label>
             <select id="initialSync" style="width: 100%; margin: 0; padding: var(--space-2);">
               <option value="50">Last 50 Emails</option>
               <option value="30days">Last 30 Days</option>
@@ -858,7 +858,7 @@
         
         <button onclick="addHeaderInput()" class="secondary-btn" style="margin-top: var(--space-1); margin-bottom: var(--space-5);">+ Add Custom Header</button>
         <br>
-        <button id="saveBtn" onclick="saveConfiguration()">Accept & Update Tab</button>
+        <button id="saveBtn" onclick="saveConfiguration()">Accept & Weave Into Tab</button>
       </div>
 
       <div id="step-3" class="step">
@@ -1828,7 +1828,7 @@
               btn.innerText = "Verify & Scan Label";
               btn.disabled = false;
             } else {
-              btn.innerText = "Scanning Emails...";
+              btn.innerText = "Gathering threads...";
               google.script.run
                 .withFailureHandler(function(error) {
                   _logFailure('scanEmailForSuggestions', error, null);
@@ -2102,7 +2102,7 @@
         if (!finalTargetUrl) {
           if (urlErrEl) { urlErrEl.textContent = 'A Google Sheet URL is required.'; urlErrEl.classList.add('visible'); }
           urlInput && urlInput.focus();
-          btn.innerText = "Accept & Update Tab";
+          btn.innerText = "Accept & Weave Into Tab";
           btn.disabled = false;
           return;
         } else {
@@ -2113,7 +2113,7 @@
         const usableRules = headerConfigs.filter(function(h) { return h.name && h.pattern !== 'EMAIL_DATE' && h.pattern !== 'EMAIL_ID'; });
         if (usableRules.length === 0 && headerConfigs.length > 0) {
           showStatus('Add at least one custom capture rule before saving.', 'error');
-          btn.innerText = "Accept & Update Tab";
+          btn.innerText = "Accept & Weave Into Tab";
           btn.disabled = false;
           return;
         }
@@ -2124,11 +2124,11 @@
           .withFailureHandler(function(error) {
              _logFailure('setupSpreadsheet', error, null);
              showStatus('Save Error: ' + (error && error.message ? error.message : error), 'error');
-             btn.innerText = "Accept & Update Tab";
+             btn.innerText = "Accept & Weave Into Tab";
              btn.disabled = false;
           })
           .withSuccessHandler(function(res) {
-            btn.innerText = "Accept & Update Tab";
+            btn.innerText = "Accept & Weave Into Tab";
             btn.disabled = false;
             if (res.success) {
               document.getElementById('labelName').value = '';
