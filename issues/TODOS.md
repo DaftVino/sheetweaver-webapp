@@ -24,6 +24,20 @@
 
 **Depends on / blocked by:** troubleshooting.md must have stable, named anchors for each error state.
 
+## Deferred from registry-sharding eng review (2026-07-03)
+
+### Prune headerConfigs redundancy from connection records
+
+**What:** `conn.headerConfigs` duplicates the column rules already stored in sheet header notes (`processEmails` parses rules from notes at `Code.js:917`, not from the registry). The registry copy is used only by `repairConnection` as a backup. Storing it separately (or dropping it with a repair redesign) shrinks each record by the majority of its bytes.
+
+**Why:** headerConfigs is the bulk of each ~968-byte record. Pruning buys 3-4× headroom against both the 9KB per-connection cap and the PropertiesService quota-bound ceiling (~100-200 connections).
+
+**Cons / blocker:** `repairConnection` (`Code.js:481-494`) depends on the registry copy — pruning without a repair redesign breaks it. Needs its own small design pass.
+
+**Context:** Surfaced by the outside voice during the 2026-07-03 /plan-eng-review of the sharding plan (finding #8). The interim mitigation shipped in Phase 1 is the 9KB size guard in `setupSpreadsheet` (D6).
+
+**Depends on / blocked by:** registry sharding (Phase 1) landing first; a decision on how repair works without the registry copy.
+
 ## Deferred from /ship pre-landing review (2026-06-30)
 
 ### Test coverage for lock-acquire-failure paths in togglePauseConnection/deleteConnection
