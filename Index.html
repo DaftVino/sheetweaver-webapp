@@ -1461,7 +1461,7 @@
         if (!tr) return;
         Array.from(tr.querySelectorAll('button.action-btn')).forEach(function(b) { b.disabled = true; });
         const td = tr.querySelector('td:last-child');
-        if (td) { td._savedContent = td.innerHTML; td.textContent = msg || 'Updating…'; td.style.color = 'var(--text-muted)'; td.style.fontStyle = 'italic'; }
+        if (td) { td._savedContent = td.innerHTML; td.textContent = msg || 'Re-threading…'; td.style.color = 'var(--text-muted)'; td.style.fontStyle = 'italic'; }
       }
 
       function sortDashboard(n) {
@@ -1498,7 +1498,7 @@
       }
 
       function enableSync(btn) {
-        btn.innerText = "Enabling...";
+        btn.innerText = "Stringing the loom...";
         btn.disabled = true;
         google.script.run
           .withFailureHandler(function(error) { _logFailure('enableUserTrigger', error, null); showStatus('Error enabling sync: ' + (error && error.message ? error.message : error), 'error'); })
@@ -1570,7 +1570,7 @@
       }
 
       function togglePause(tabName, url, rowEl) {
-        _setRowLoading(rowEl, 'Updating…');
+        _setRowLoading(rowEl, 'Re-threading…');
         google.script.run
           .withFailureHandler(function(error) { _logFailure('togglePauseConnection', error, null); showStatus('Error toggling pause: ' + (error && error.message ? error.message : error), 'error'); loadDashboard(); })
           .withSuccessHandler(function(res) {
