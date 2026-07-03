@@ -74,6 +74,23 @@
 
 **Depends on / blocked by:** none; ready to design whenever prioritized.
 
+## Deferred from Phase 3 (loom-b-c) adversarial review (2026-07-03)
+
+### getDashboardData() exposes full connection metadata to every caller, filtered client-side only
+
+**What:** `getDashboardData()` (Code.js) returns every registry entry's full metadata — `spreadsheetUrl`, `gmailLabel`, `tabName`, sync status/errors — to any authenticated caller of the deployment, regardless of ownership. The `isOwner` flag is computed server-side but filtering on it (which rows to actually act on) happens client-side in `Index.html`; the server does not scope the response to the caller's own connections. On a deployment with `access: ANYONE` / `executeAs: USER_ACCESSING` (per `appsscript.json`), this means any user of the deployment can read other users' spreadsheet URLs and Gmail label names by inspecting the RPC payload directly (devtools/network tab), even though the UI never surfaces it.
+
+**Why:** Surfaced by the Claude adversarial subagent during the 2026-07-03 `/ship` pre-landing review of the Phase 3 (loom-b/loom-c) work, while investigating whether the new `totalRowsWoven` deployment-wide counter crossed a trust boundary. The counter itself is a comparatively minor addition to this much larger pre-existing hole — flagging both together since they're the same category of issue.
+
+**Pros:**
+- Fix is bounded to one function: scope `getDashboardData()`'s per-connection metadata based on `isOwner`, returning only what non-owners are meant to see (or nothing) for connections they don't own
+**Cons:**
+- Needs a decision on what non-owner rows should show in the dashboard today (the UI does render other users' rows in some admin/shared context — needs review before narrowing the payload) — not a one-line fix without checking why non-owned rows are returned at all
+
+**Context:** Pre-existing behavior, not introduced by Phase 3 — predates the loom-b/loom-c branch. Deferred rather than fixed inline to avoid scope creep on an unrelated ship.
+
+**Depends on / blocked by:** none technically; needs a design decision on why non-owned connection rows are returned to the client at all before scoping the fix.
+
 ## Completed
 
 ### Test coverage for lock-acquire-failure paths in togglePauseConnection/deleteConnection
