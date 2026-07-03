@@ -69,6 +69,7 @@ ScriptApp time trigger fires every 15 min (per user)
 ```
 User opens app → loadDashboard()
   → google.script.run.getDashboardData()
+      → Migrate legacy capture_registry blob into capture_conn_* shards, if still present
       → Read all capture_conn_* shards
       → For each connection: check if tab still exists
       → Return connection list with health status
@@ -198,7 +199,7 @@ The capture pipeline normalizes email bodies before extraction: it detects HTML-
 |-----------|-------|--------|
 | Apps Script max execution time | 6 minutes | First-sync of large labels may be killed mid-run |
 | PropertiesService value size | ~9 KB per property | Enforced per connection (`MAX_CONN_BYTES`) now that the registry is sharded, so one oversized connection no longer blocks others from saving |
-| PropertiesService total store size | ~500 KB per script | Shared across all Script Properties (registry shards, diagnostics, admin/user settings); reported as `totalStoreBytes` / `totalStoreCap` in Admin Diagnostics |
+| PropertiesService total store size | ~500 KB per script | Shared across all Script Properties (registry shards, diagnostics, admin settings) — User Properties (per-user theme, default sheet URL) are a separate store and don't count against this cap; reported as `totalStoreBytes` / `totalStoreCap` in Admin Diagnostics |
 | `GmailApp.search()` results | 500 per call | Very large label backlogs require pagination |
 | Trigger quota | 20 triggers per user per script | Not a current concern; one trigger per user |
 | `HtmlService` output size | 50 MB | Not a current concern |
