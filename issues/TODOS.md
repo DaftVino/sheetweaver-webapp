@@ -38,6 +38,42 @@
 
 **Depends on / blocked by:** registry sharding (Phase 1) landing first; a decision on how repair works without the registry copy.
 
+## Deferred from registry-sharding adversarial review (2026-07-03)
+
+### Enforce (or alert on) the 500KB total-store cap
+
+**What:** `getAdminDiagnostics`'s `registryHealth.totalStoreBytes`/`totalStoreCap` (500KB) is reported in the admin panel but nothing actually checks it on any write path. Sharding removed the old single-9KB-blob ceiling but replaced it with an unbounded number of per-connection shards; nothing stops the total script-property store (shared across every user) from creeping toward GAS's real ~500KB ceiling as connections accumulate across the whole deployment.
+
+**Why:** Once the real GAS quota is crossed, every `PropertiesService.setProperty` call for every user starts throwing — a store-wide outage, not a per-user one. Today's per-connection guard (D6) prevents any single record from being the cause, but says nothing about aggregate growth.
+
+**Pros:**
+- Turns a silent, deployment-wide failure mode into a proactive admin alert or hard stop
+- The metric already exists in `getAdminDiagnostics` — this is surfacing/enforcing it, not building new plumbing
+
+**Cons:**
+- This is a policy decision (hard cap on new connections? alert threshold? per-user quota?), not a one-line fix
+- No current deployment is anywhere near this ceiling, so it's not urgent
+
+**Context:** Surfaced by the Claude adversarial subagent during the 2026-07-03 `/ship` pre-landing review of the sharding work.
+
+**Depends on / blocked by:** none technically; needs a design decision on the enforcement policy before implementation.
+
+### Recovery path for connection records that fail migration
+
+**What:** `_migrateRegistryIfNeeded` now skips and logs (rather than crashing on) a record whose shard write throws mid-migration, but `capture_registry` is still deleted unconditionally afterward. The failed record survives only in the forensic `capture_registry_backup_v1` blob — the affected user's connection silently disappears from their dashboard and stops syncing, with no in-app error, until an admin manually reconstructs a shard from the backup JSON.
+
+**Why:** This is the right tradeoff for preventing a store-wide migration-retry-loop outage (see the `_migrateRegistryIfNeeded` fix in this same release), but it trades a total outage for a silent per-user data-loss-looking state with no documented recovery runbook.
+
+**Pros:**
+- Small, scoped fix: either a documented manual-recovery runbook, or a lightweight "N connections failed to migrate, contact admin" surface in the dashboard/admin panel
+
+**Cons:**
+- Needs a decision on whether this belongs in-product (dashboard notice) or is purely an admin/support runbook concern
+
+**Context:** Surfaced by the Claude adversarial subagent during the 2026-07-03 `/ship` pre-landing review, alongside the migration write-loop try/catch fix it's a direct consequence of.
+
+**Depends on / blocked by:** none; ready to design whenever prioritized.
+
 ## Completed
 
 ### Test coverage for lock-acquire-failure paths in togglePauseConnection/deleteConnection
