@@ -192,7 +192,7 @@ function getAdminDiagnostics() {
       largestConnTab: largestConnTab,
       perConnCap: MAX_CONN_BYTES,
       totalStoreBytes: totalStoreBytes,
-      totalStoreCap: 500000,
+      totalStoreCap: MAX_TOTAL_STORE_BYTES,
       hasTrigger: checkUserTrigger()
     }
   };
@@ -356,6 +356,7 @@ function enableUserTrigger() {
 const REGISTRY_SHARD_PREFIX = 'capture_conn_';
 const REGISTRY_BACKUP_KEY = 'capture_registry_backup_v1';
 const MAX_CONN_BYTES = 9000; // GAS per-property size cap; enforced in setupSpreadsheet, reported in getAdminDiagnostics
+const MAX_TOTAL_STORE_BYTES = 500000; // GAS total-script-property-store size cap; reported in getAdminDiagnostics
 
 // Corrupt shards found by _readRegistry are queued here rather than logged
 // inline, so a caller holding a lock never triggers logDiag's own internal
@@ -477,6 +478,7 @@ function _migrateRegistryIfNeeded(props) {
 
   let corruptBlob = false;
   let backupWriteFailure = null;
+  const migrationWriteFailures = [];
   try {
     const raw = props.getProperty(REGISTRY_KEY);
     if (raw === null) return { ok: true }; // migrated by another execution while we waited for the lock
@@ -497,7 +499,15 @@ function _migrateRegistryIfNeeded(props) {
     const existingShards = [];
     Object.keys(all).forEach(function(key) {
       if (key.indexOf(REGISTRY_SHARD_PREFIX) === 0) {
-        try { existingShards.push(JSON.parse(all[key])); } catch(e) {}
+        try {
+          existingShards.push(JSON.parse(all[key]));
+        } catch(e) {
+          // Same corrupt-shard tolerance as _readRegistry (2A): log it rather
+          // than silently excluding it from existingShards, which would let
+          // this pass write a fresh duplicate shard for an identity that
+          // already has a (corrupt) shard on disk.
+          _pendingCorruptShardKeys.push(key);
+        }
       }
     });
 
@@ -516,8 +526,21 @@ function _migrateRegistryIfNeeded(props) {
       });
       if (!hasShardMatch) {
         conn.id = Utilities.getUuid();
-        props.setProperty(_connKey(conn), JSON.stringify(conn));
-        migratedThisPass.push(conn);
+        try {
+          props.setProperty(_connKey(conn), JSON.stringify(conn));
+          migratedThisPass.push(conn);
+        } catch(e) {
+          // Most likely cause: this record's serialized size exceeds the
+          // PropertiesService per-property limit (ship pre-landing review,
+          // data-migration finding). Array.prototype.forEach aborts entirely
+          // on a thrown callback, so an unguarded throw here wouldn't just
+          // fail this one record — it would also skip every blob record
+          // still to come, AND leave capture_registry undeleted, so every
+          // future call re-walks the same records and re-throws at the same
+          // one: a permanent, store-wide outage. Skip and log instead, same
+          // shape as _flushRegistryResults' write-failure handling.
+          migrationWriteFailures.push({ tabName: conn.tabName, errorClass: e.name, message: e.message });
+        }
       }
       // else: a live shard (or an earlier record in this same blob) already
       // covers this identity — merge-only means it wins.
@@ -540,8 +563,12 @@ function _migrateRegistryIfNeeded(props) {
     return { ok: true };
   } finally {
     lock.releaseLock();
+    _flushCorruptShardLogs();
     if (corruptBlob) logDiag('ERROR', '_migrateRegistryIfNeeded:corruptBlob', {});
     if (backupWriteFailure) logDiag('WARN', '_migrateRegistryIfNeeded:backupWriteFailed', backupWriteFailure);
+    migrationWriteFailures.forEach(function(f) {
+      logDiag('ERROR', '_migrateRegistryIfNeeded:writeFailed', f);
+    });
   }
 }
 
@@ -1025,10 +1052,21 @@ function setupSpreadsheet(labelName, tabName, targetUrl, headerConfigs, initialS
 
       // Hijack / duplicate check (commit 1e6fc9f regression): does ANY OTHER
       // connection already occupy this (tabName, targetUrl) combo? Excludes
-      // the record we're updating in place, if any.
+      // the record we're updating in place, if any. Blocks same-user
+      // collisions too (ship pre-landing review, red-team confirmed): without
+      // this, editing one of your own connections into an identity match with
+      // another of your own connections silently created two shards sharing
+      // one identity — the older shard became a permanently unreachable
+      // "ghost" (togglePauseConnection/deleteConnection/getEditConfig all
+      // look up by identity triple, Array.find only ever returns the first
+      // match), yet processEmails kept syncing it every 15 minutes with no
+      // way for the user to see or remove it.
       const collision = registry.find(c => c.tabName === tabName && c.spreadsheetUrl === targetUrl && (!existing || c.id !== existing.id));
-      if (collision && collision.userEmail !== activeEmail) {
-        return { success: false, error: 'A connection with this tab name already exists for another user on this sheet.' };
+      if (collision) {
+        const message = collision.userEmail !== activeEmail
+          ? 'A connection with this tab name already exists for another user on this sheet.'
+          : 'You already have a connection with this tab name on this sheet.';
+        return { success: false, error: message };
       }
 
       // Every save fully replaces the connection's fields (matches prior

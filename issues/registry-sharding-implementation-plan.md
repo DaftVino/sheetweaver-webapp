@@ -94,7 +94,7 @@ In `recordConnectionRun`: `conn.lastError = result.error ? String(result.error).
 
 ## Rollback
 
-Redeploy previous version; copy `capture_registry_backup_v1` back into `capture_registry`; delete all `capture_conn_*` properties. Connections created post-migration are lost on rollback (accepted by owner).
+**Pause the `processEmails` trigger and avoid opening the dashboard before starting rollback.** Old code's `_readRegistry` only reads `capture_registry` — during the window between "shards exist, blob deleted" and "blob manually restored," old code sees zero connections for every user (empty dashboard, silent no-op sync runs), not an error. Minimize that window: pause the trigger, redeploy previous version, copy `capture_registry_backup_v1` back into `capture_registry`, delete all `capture_conn_*` properties, THEN resume the trigger and reopen the dashboard. Connections created post-migration are lost on rollback (accepted by owner).
 
 ## Out of scope
 
