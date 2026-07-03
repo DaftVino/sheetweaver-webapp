@@ -1,6 +1,6 @@
 # Contributing
 
-Thank you for taking the time to contribute.
+Thank you for taking the time to contribute. This doc is for developers changing `Code.js` or `Index.html`; for using the app see the [First-Time User Guide](../docs/first-time-user-flow.md).
 
 ## Before You Start
 
@@ -36,10 +36,10 @@ Then manual testing in the deployed web app:
 
 - Open the deployed web app URL after pushing.
 - Walk through the full setup flow: verify a Gmail label, configure fields, save, confirm the tab is created.
-- Check the dashboard: edit, pause, delete, and repair a connection.
+- Check the dashboard: edit, rest, delete, and mend a thread.
 - Wait for or manually trigger `processEmails()` via **Apps Script → Run function** and confirm rows appear in the sheet.
 - Test with labels that have special characters, empty labels, and labels with no emails.
-- Click **Copy Debug** after each key action and verify the snapshot includes your connection status and recent events. Include the Copy Debug output in your PR description as evidence of manual testing.
+- Click **Copy Debug** after each key action and verify the snapshot includes your thread status and recent events. Include the Copy Debug output in your PR description as evidence of manual testing.
 
 ## Pull Request Checklist
 
@@ -57,7 +57,7 @@ Then manual testing in the deployed web app:
 
 ## Reporting Bugs
 
-Use the [bug report template](.github/ISSUE_TEMPLATE/bug_report.md). Include:
+Use the [bug report template](ISSUE_TEMPLATE/bug_report.md). Include:
 - Steps to reproduce
 - Expected vs. actual behavior
 - Your Google Workspace domain type (if known)

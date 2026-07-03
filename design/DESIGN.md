@@ -58,11 +58,13 @@ is the thread.
 - ARIA menu contract: Arrows move, Tab closes, Escape closes + returns focus (see CLAUDE.md).
 - Toasts: `role="status"` + `aria-live="polite"`; close buttons carry `aria-label="Dismiss notification"`.
 
-## Sanctioned future direction ("The Loom")
-Not built; approved as the direction for making the weaving identity an event:
-1. **Thread animation** — on wizard completion, a 2px teal line weaves over-under through the dot grid and fills a cell. One second, once, then still.
-2. **Loom status line** — quiet footer: "Next weave in 7 min · 142 rows woven this week", using `--thread`.
-3. **`--thread` accent** — reserved data-in-motion color (values above).
+## "The Loom" — shipped v2.2.0 (Loom B/C)
+Originally scoped below as a future direction; built and shipped in v2.2.0. Actual
+implementation superseded the original 1-second sketch — recorded here so this
+doc doesn't drift from what's live:
+1. **Thread animation** (`runWeave()`, `Index.html`) — fires once per new connection on the wizard success screen. Two `--thread`-colored threads draw in (1000ms), bulge, and snap into one merged line (~1.8s total), then resolve into the title: a spark burst on Solar/Torres (~800ms), or a car-emoji ("🏎️") erasing the thread on C64/NES (~1.5-2s, includes the theme's existing personality — same spirit as the 80ms button-snap exemption, not a novelty add-on). Full sequence runs ~2.6s on non-NES themes, longer on NES with its hold beat. Respects `prefers-reduced-motion` (skipped entirely, title shown immediately). Never blocks the wizard on error.
+2. **Loom status line** (`.loom-status-footer`, `_renderLoomFooter()`) — quiet dashboard footer: "Next weave in ~N min · X,XXX rows woven", using `--thread`. `role="status"` + `aria-live="polite"` per this doc's toast accessibility invariant, extended to this element since both are ambient live-status surfaces.
+3. **`--thread` accent** — data-in-motion color, now consumed by both of the above (previously reserved-only).
 
 ## Decisions Log
 | Date | Decision | Rationale |
@@ -72,3 +74,4 @@ Not built; approved as the direction for making the weaving identity an event:
 | 2026-07-01 | Motion tokens (120/180ms) approved, NES 80ms exempt | Ad-hoc durations were the system's weakest part |
 | 2026-07-01 | tabular-nums on counts/timestamps approved | Data product; numbers must not jitter |
 | 2026-07-01 | "Loom" ideas recorded as future direction | Outside-voice proposals worth keeping, not scoping now |
+| 2026-07-03 | Loom B/C shipped; timing/choreography updated from the 1s sketch to actual ~2.6s draw-bulge-snap-merge sequence, NES car-emoji finale documented | Pre-landing review flagged the doc as stale relative to what shipped (v2.2.0) |

@@ -1,11 +1,13 @@
 # Troubleshooting
 
+Fixes for common problems, for anyone using or admin-ing SheetWeaver. For first-time setup steps see the [Setup Guide](setup-guide.md); for the everyday walkthrough see the [First-Time User Guide](first-time-user-flow.md).
+
 Most errors show a **report ID** — an 8-character code like `a1b2c3d4`. Give that ID
 to your admin. They can look it up in the Admin Diagnostics panel or in Apps Script →
 Executions. Regular users only see the report ID, never the raw error.
 
 **Do this first: click the Copy Debug button** in the top-right of any screen. It copies
-your capture status, recent report IDs, and browser details into one block of text. Paste
+your thread status, recent report IDs, and browser details into one block of text. Paste
 that into your support message. Browser-side (JavaScript) errors are included too.
 
 ---
@@ -94,7 +96,7 @@ The connection registry is stored in Script Properties, one key per connection. 
 
 ## "Could not read your Google identity"
 
-This error means `Session.getActiveUser().getEmail()` returned an empty string. Common causes:
+**What you see:** the app can't tell who you're signed in as. Common causes (admin note: `Session.getActiveUser().getEmail()` returned an empty string):
 
 - You are signed into multiple Google accounts in the same browser. Sign out of all, then sign in as a single account.
 - The web app was deployed with `access: DOMAIN` but your account is a consumer `@gmail.com`. Ask your admin to change the manifest to `ANYONE` and redeploy.
@@ -155,59 +157,19 @@ See [Setup Guide — GitHub Actions CI Deploy](setup-guide.md#github-actions-ci-
 
 ## Update Available Banner in Admin Diagnostics
 
-When the admin opens the dashboard, the Admin Diagnostics panel checks the GitHub Releases API for a newer version (at most once every 7 days; result is cached). If a newer release exists, a banner appears at the top of the Admin panel with a link to the release notes.
+**What you see:** the Admin Diagnostics panel checks GitHub for a newer version (at most once every 7 days) and shows a banner with a link to the release notes if one exists.
 
-The banner means: a new version of the code is in the repo. It does **not** update automatically. The web app cannot run `git`, `clasp`, or shell commands — the admin must apply the update locally.
+**What it means:** newer code exists in the repo. The web app can't update itself — it can't run `git`, `clasp`, or shell commands — so the admin must apply the update locally. See [Setup Guide — Update Instructions](setup-guide.md#update-instructions) for the full steps.
 
-**To apply the update:**
-
-**Windows (PowerShell):**
-
-```powershell
-git pull
-npm install              # only if package.json changed
-npm run verify:local     # must pass before pushing
-clasp push
-```
-
-**macOS / Linux:**
-
-```bash
-git pull
-npm install
-npm run verify:local
-clasp push
-```
-
-After `clasp push`, update the existing live deployment in the Apps Script editor:
-
-1. Click **Deploy → Manage deployments**.
-2. Select the live web app deployment.
-3. Click the **Edit** pencil.
-4. Set **Version** to **New version**.
-5. Click **Deploy**.
-
-Do not use **Deploy → New deployment** for routine updates. That creates a separate deployment and may produce a different URL. Editing the deployment but only changing its name or description also does not update the live script; **Version** must be changed to **New version**.
-
-After updating the live deployment, hard-reload the web app (Ctrl+Shift+R / Cmd+Shift+R). The banner will disappear once the cached version check expires (up to 7 days) or when the `APP_VERSION` constant in `Code.js` matches the latest release tag.
+After updating the live deployment, hard-reload the web app (Ctrl+Shift+R / Cmd+Shift+R). The banner disappears once the cached version check expires (up to 7 days) or once `APP_VERSION` in `Code.js` matches the latest release tag.
 
 ---
 
 ## Update Did Not Take Effect / Old Version Still Showing
 
-After running `clasp push`, users must receive a new deployment version before they see the update. `clasp push` alone only updates the saved code — it does not bump the live web app version.
+**What you see:** you ran `clasp push` but users still see the old version.
 
-**Fix:**
-
-```powershell
-clasp push
-```
-
-Then open **Apps Script editor → Deploy → Manage deployments**, edit the existing live web app deployment, and change **Version** to **New version**. Click **Deploy** to apply the new version.
-
-The web app URL does not change when you edit the existing deployment. Users do not need a new link — they just need to hard-reload the page (Ctrl+Shift+R / Cmd+Shift+R) after the deployment version is updated.
-
-If the old version still shows, confirm you did not create a separate **New deployment** and did not only rename or resave the existing deployment. The live deployment must point to a newly created version.
+**Why:** `clasp push` only saves the new code — it does not put it live. Someone still has to edit the live deployment and set **Version** to **New version**. See [Setup Guide — Update Instructions](setup-guide.md#update-instructions) for the exact steps.
 
 **Wrong update path:** `clasp pull` downloads the Apps Script cloud copy into your local repo. It does NOT apply upstream repo updates. Always use `git pull` to get new code, then `clasp push` to send it to Apps Script. Running `clasp pull` after `git pull` will overwrite your local changes with the cloud version.
 

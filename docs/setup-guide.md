@@ -1,6 +1,6 @@
 # Setup Guide
 
-Step-by-step instructions for deploying SheetWeaver for the first time.
+Step-by-step instructions for installers/admins deploying SheetWeaver for the first time, and for applying updates afterward. For the end-user walkthrough see [First-Time User Guide](first-time-user-flow.md); for fixing a broken install see [Troubleshooting](troubleshooting.md).
 
 There are three install paths:
 
@@ -218,15 +218,7 @@ Select `bootstrapAdmin` from the function dropdown and click **Run**. Authorize 
 
 ## First-Time User Flow
 
-When a user opens the web app for the first time:
-
-1. They see the Dashboard. If no trigger is active, a yellow banner appears — but the trigger is typically enabled automatically during setup.
-2. They click **+ Add a new capture**, enter a Gmail label name, and follow the wizard.
-3. After saving, the app registers the connection and enables the user's 15-minute sync trigger automatically.
-4. If trigger auto-enable fails (rare), a prompt appears to enable it via the dashboard banner.
-5. Within ~15 minutes, matching emails are processed and data appears in the configured Sheet.
-
-If anything goes wrong, click the **Copy Debug** button in the top-right corner of any screen and share the output with your admin. The snapshot includes your connection status, recent error report IDs, and browser context.
+After deploying, send new users the [First-Time User Guide](first-time-user-flow.md) — it walks them through the wizard, the dashboard, and what to do if something looks wrong.
 
 ---
 
@@ -278,7 +270,7 @@ After `clasp push`, update the existing live Apps Script deployment:
 
 This step is required for the update to be live. `clasp push` only updates the saved project files; users keep running the old deployment until the live deployment is edited to use a new version.
 
-Do **not** click **Deploy → New deployment** for routine updates. A new deployment creates a separate deployment and may produce a different web app URL. Do **not** only rename or save the deployment without changing **Version** to **New version**; that does not move the live web app to the newly pushed code.
+Do **not** click **Deploy → New deployment** for routine updates. A new deployment creates a separate deployment and may produce a different web app URL. Do **not** only rename or save the deployment without changing **Version** to **New version**; that does not move the live web app to the newly pushed code. Editing the existing deployment keeps the same web app URL — users never need a new link.
 
 After updating the live deployment, open the web app and confirm the Admin Diagnostics panel no longer shows errors from the previous version.
 
@@ -298,7 +290,7 @@ no action needed from the admin or users. New fields added by later versions, su
 status or sync cursors, are additive and are filled in as each connection runs.
 
 Users should not need to recreate connections. They may need to reauthorize if the update adds new
-OAuth scopes, click **Enable Auto-Sync** if they never had a trigger, or repair/recreate a connection
+OAuth scopes, click **Start the Loom** if they never had a trigger, or repair/recreate a connection
 that was created under an older bug and has missing owner identity or missing backup rules.
 
 If you create a **brand-new Apps Script project** instead of updating the same one, previous
@@ -310,18 +302,6 @@ fresh install unless you intentionally migrate those properties.
 ## Granting Access to Other Developers
 
 Share the Apps Script project via **Apps Script editor → Share** (top-right) with **Editor** access so they can use `clasp push`.
-
-## Re-Deploying After Changes
-
-Every push requires a new deployment version for users to see the update:
-
-```powershell
-clasp push
-```
-
-Then open **Apps Script editor → Deploy → Manage deployments**, edit the existing live web app deployment, and change **Version** to **New version** before clicking **Deploy**.
-
-The web app URL remains the same — users do not need a new link.
 
 ## GitHub Actions CI Deploy
 

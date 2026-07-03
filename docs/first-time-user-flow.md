@@ -29,7 +29,7 @@ them to pull out the fields you choose, then writes those fields to your sheet.
 ## The setup wizard
 
 After you allow the permissions, you land on the dashboard. If you have no
-captures yet, click **+ Add a new capture** to open the wizard.
+threads yet, click **+ Weave a New Thread** to open the wizard.
 
 ### Step 1 — Enter a Gmail label name
 
@@ -49,9 +49,9 @@ This screen is called **Configure Spreadsheet Data**. Here you:
 
 ### Step 3 — Save
 
-Look over your setup and click **Save**. SheetWeaver creates a sync that runs on
-its own every 15 minutes. You see a **Success!** message when it is done, with a
-brief thread-weave animation to mark the new connection (shown once, and skipped
+Look over your setup and click **Save**. SheetWeaver creates a weave that runs on
+its own every 15 minutes. You see a **"The Loom Is Strung!"** message when it is done, with a
+brief thread-weave animation to mark the new thread (shown once, and skipped
 automatically if you have reduced motion enabled).
 
 ---
@@ -70,36 +70,37 @@ Don't have a label yet? Make one first:
 
 ## What the dashboard shows
 
-The dashboard lists your captures under **Active Connections**:
+The dashboard lists your threads under **Active Threads**:
 
 | Column | What it means |
 |---|---|
-| Creator Email | The account that owns this capture |
+| Creator Email | The account that owns this thread |
 | Gmail Label | The Gmail label being tracked |
 | Spreadsheet Tab | The sheet tab where new rows are added |
 | Gmail Status | Whether the app can read the label |
 | Sheet Status | Whether the app can write to the tab |
-| Last Sync | When the last sync ran |
-| Actions | Edit, pause, delete, or repair this capture |
+| Last Weave | When the last weave ran |
+| Actions | Edit, rest, delete, or mend this thread |
 
-The sync runs all your captures on its own every 15 minutes.
+The loom weaves all your threads on its own every 15 minutes.
 
-Below the table, a status line shows when the next sync will run and how many
-rows have been added across all your captures since you first set up SheetWeaver.
+Below the table, a status line shows when the next weave will run for your threads, and
+how many rows have been woven in across *every* thread on this deployment since it was
+installed (not just yours — it's a shared, whole-team count).
 
 ---
 
-## How to know the sync is working
+## How to know the loom is running
 
 SheetWeaver sets up a trigger under your Google account that runs every 15
 minutes. You can check that it is on:
 
-- A green **"✅ Auto-Sync is Active"** banner shows at the top of the dashboard
+- A green **"✅ The Loom is Running"** banner shows at the top of the dashboard
   when the trigger is on.
 - In Google Apps Script: open your copy of the script, click **Triggers** (the
   clock icon), and look for a `processEmails` trigger owned by your email.
 
-If the banner says **"⚠️ Auto-Sync is Off"**, click **Enable 15-Min Auto-Sync** to
+If the banner says **"⚠️ The Loom is Idle"**, click **Start the Loom** to
 turn it back on.
 
 ---

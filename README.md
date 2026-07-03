@@ -8,7 +8,7 @@ SheetWeaver is a Google Apps Script web app that automatically extracts structur
 
 Users connect a Gmail label to a Google Sheet tab and define extraction rules (field names and patterns). The app then scans matching emails on a recurring trigger and writes parsed data — sender, date, subject, and custom-extracted fields — into rows on the configured sheet.
 
-Multiple team members can each configure their own connections. Each user's trigger runs as themselves, reading their own Gmail and writing to their own permitted Sheets.
+Multiple team members can each configure their own threads. Each user's trigger runs as themselves, reading their own Gmail and writing to their own permitted Sheets.
 
 ## Tech Stack
 
@@ -27,36 +27,19 @@ Multiple team members can each configure their own connections. Each user's trig
 - Node.js 18 or later
 - `clasp` CLI authenticated with your Google account
 
-Install `clasp` globally (recommended — simplest copy/paste for all commands below):
-
-```powershell
-# Windows PowerShell
-node --version        # confirm 18+
-npm --version         # confirm npm is available
-npm install -g @google/clasp
-```
-
-```bash
-# macOS / Linux
-node --version
-npm --version
-npm install -g @google/clasp
-```
-
-> **Alternative:** if you prefer not to install `clasp` globally, replace every `clasp` command below with `npx clasp`. Repo-local `npx clasp` works the same way but requires `npm install` first and adds `npx` to every command.
+Full install commands: [Setup Guide — Prerequisites](docs/setup-guide.md#prerequisites).
 
 ## Install Checklist
 
-Each installer creates their own Apps Script project and becomes the admin for that instance:
+Each installer creates their own Apps Script project and becomes the admin for that instance. Full commands are in the [Setup Guide](docs/setup-guide.md).
 
-- [ ] Clone the repo and run `npm install`
-- [ ] Create a new Apps Script project and put **your own** `scriptId` in `.clasp.json` (copy from `.clasp.json.example`)
-- [ ] Push code with `clasp push`
-- [ ] Run `bootstrapAdmin` once in the Apps Script editor to register yourself as admin
-- [ ] Deploy as a web app — **Execute as:** User accessing the web app; **Who has access:** Anyone with a Google account
-- [ ] Choose access level: leave `access` as `ANYONE` for consumer + Workspace accounts, or change it to `DOMAIN` for Workspace-only restriction (redeploy after changing)
-- [ ] Open the web app, click **+ Add a new capture**, and enter your Sheet URL to complete your first capture
-- [ ] Optionally set an org-wide default Sheet URL via a `default_spreadsheet_url` Script Property so new users see a pre-filled URL
+- [ ] Clone the repo and install dependencies
+- [ ] Create a new Apps Script project with your own `scriptId`
+- [ ] Push code and run `bootstrapAdmin` once to register yourself as admin
+- [ ] Deploy as a web app
+- [ ] Choose your access level (`ANYONE` or `DOMAIN`-restricted)
+- [ ] Open the web app, click **+ Weave a New Thread**, and enter your Sheet URL to complete your first thread
+- [ ] Optionally set an org-wide default Sheet URL
 - [ ] Share the web app URL with your team
 
 ## Setup
@@ -79,7 +62,7 @@ See **[docs/setup-guide.md](docs/setup-guide.md)** for full step-by-step instruc
 | `timeZone` | `America/Los_Angeles` | Trigger scheduling reference |
 | `exceptionLogging` | `STACKDRIVER` | Errors appear in Cloud Logging |
 
-**Workspace-only variant:** if your team is on Google Workspace and you want to restrict access to your domain, change `access` to `"DOMAIN"` in `appsscript.json` before deploying. You must redeploy after changing this value.
+**Workspace-only variant:** restricting access to your Google Workspace domain is a one-line manifest change — see [Setup Guide §8](docs/setup-guide.md#8-optional-workspace-only-access).
 
 **Personal install variant (single-user only):** if you want only yourself to use the app, you must set **both** of the following in the Apps Script deploy dialog — changing only one is unsafe:
 - **Execute as:** Me (the deployer) — i.e. `executeAs: USER_DEPLOYING`
@@ -89,9 +72,7 @@ See **[docs/setup-guide.md](docs/setup-guide.md)** for full step-by-step instruc
 
 ### Default Spreadsheet URL
 
-Users enter their Sheet URL in the app during setup. The app saves it as that user's personal default for next time. No hard-coded URL exists in the code.
-
-As admin you can optionally set an org-wide default via a Script Property (`default_spreadsheet_url`), but this is not recommended — each user's own URL is clearer and avoids accidental shared-sheet writes.
+Users enter their own Sheet URL during setup by default. Admins can optionally set an org-wide default — see [Setup Guide — Optional: Org-Wide Default Sheet URL](docs/setup-guide.md#optional-org-wide-default-sheet-url).
 
 ## Project Structure
 
@@ -115,13 +96,13 @@ As admin you can optionally set an org-wide default via a Script Property (`defa
 
 ## Usage Flow
 
-1. Open the web app URL — you see the **Dashboard** listing all your active connections.
-2. Click **+ Add a new capture** and enter a Gmail label name. The app verifies the label and scans recent emails to suggest field names.
+1. Open the web app URL — you see the dashboard listing all your active threads.
+2. Click **+ Weave a New Thread** and enter a Gmail label name. The app verifies the label and scans recent emails to suggest field names.
 3. Define column headers and optional extraction patterns (regex or keyword delimiters).
-4. Save — the app registers the connection and automatically enables your 15-minute sync trigger.
+4. Save — the app registers the thread and automatically starts your 15-minute weave trigger.
 5. Emails arriving under the label are processed automatically every 15 minutes.
 
-First-time visitors see a dismissible welcome tip on the dashboard. The header shows the running app version (e.g. `v2.2.0`) and a **Help** menu linking to the Troubleshooting Guide, Setup Guide, [First-Time User Guide](docs/first-time-user-flow.md), Changelog, and a Report-a-Bug shortcut. Below the connections table, a status line shows the countdown to the next sync and a lifetime rows-woven count.
+First-time visitors see a dismissible welcome tip on the dashboard. The header shows the running app version (e.g. `v2.2.0`) and a **Help** menu linking to the Troubleshooting Guide, Setup Guide, [First-Time User Guide](docs/first-time-user-flow.md), Changelog, and a Report-a-Bug shortcut. Below the threads table, a status line shows the countdown to the next weave and a lifetime rows-woven count.
 
 ## Themes
 
@@ -154,10 +135,4 @@ Non-admins see only the report ID in their error message. Admins can look up the
 
 ### Copy Debug
 
-The header bar has a **Copy Debug** button available on every screen. Clicking it:
-
-1. Fetches a server-side snapshot of the caller's own connections and trigger state
-2. Merges it with client context (current view, browser, page-load time, recent errors)
-3. Copies the result as a formatted text block to your clipboard
-
-**First-line tester→admin workflow:** when something goes wrong, click Copy Debug and paste the output into a support message. The snapshot includes all recent error report IDs, so the admin can look them up immediately without back-and-forth. Client-side errors (JavaScript failures in the browser) are now also captured and included in the snapshot.
+The header bar has a **Copy Debug** button on every screen — click it and paste the output into a support message when something goes wrong. Full explanation: [Troubleshooting Guide](docs/troubleshooting.md).
