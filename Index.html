@@ -1336,21 +1336,22 @@
         tr.appendChild(lastSyncTd);
 
         const tdActions = document.createElement('td');
-        const pauseLabel = conn.isPaused ? 'Resume' : 'Pause';
+        const pauseLabel = conn.isPaused ? 'Weave On' : 'Rest';
+        const pauseTooltip = conn.isPaused ? 'Resume weaving' : 'Pause weaving';
         if (!conn.isOwner) {
-          tdActions.appendChild(_makeActionBtn(pauseLabel, '', pauseLabel + ' ' + conn.tabName, function() { togglePause(conn.tabName, conn.spreadsheetUrl, tr); }));
+          tdActions.appendChild(_makeActionBtn(pauseLabel, '', pauseTooltip + ' ' + conn.tabName, function() { togglePause(conn.tabName, conn.spreadsheetUrl, tr); }, pauseTooltip));
           tdActions.appendChild(_makeActionBtn('Delete', 'danger', 'Delete ' + conn.tabName, function() { deleteConn(conn.tabName, conn.spreadsheetUrl); }));
         } else if (conn.accessDenied) {
-          tdActions.appendChild(_makeActionBtn(pauseLabel, '', pauseLabel + ' ' + conn.tabName, function() { togglePause(conn.tabName, conn.spreadsheetUrl, tr); }));
+          tdActions.appendChild(_makeActionBtn(pauseLabel, '', pauseTooltip + ' ' + conn.tabName, function() { togglePause(conn.tabName, conn.spreadsheetUrl, tr); }, pauseTooltip));
           tdActions.appendChild(_makeActionBtn('Delete', 'danger', 'Delete ' + conn.tabName, function() { deleteConn(conn.tabName, conn.spreadsheetUrl); }));
         } else if (!conn.sheetActive) {
-          const repBtn = _makeActionBtn('Repair', '', 'Repair ' + conn.tabName, function() { repairConn(conn.tabName, conn.spreadsheetUrl, tr); });
+          const repBtn = _makeActionBtn('Mend', '', 'Mend ' + conn.tabName, function() { repairConn(conn.tabName, conn.spreadsheetUrl, tr); });
           repBtn.style.color = 'var(--warning-text)';
           tdActions.appendChild(repBtn);
           tdActions.appendChild(_makeActionBtn('Delete', 'danger', 'Delete ' + conn.tabName, function() { deleteConn(conn.tabName, conn.spreadsheetUrl); }));
         } else {
           tdActions.appendChild(_makeActionBtn('Edit', '', 'Edit ' + conn.tabName, function() { editConn(conn.tabName, conn.spreadsheetUrl, tr); }));
-          tdActions.appendChild(_makeActionBtn(pauseLabel, '', pauseLabel + ' ' + conn.tabName, function() { togglePause(conn.tabName, conn.spreadsheetUrl, tr); }));
+          tdActions.appendChild(_makeActionBtn(pauseLabel, '', pauseTooltip + ' ' + conn.tabName, function() { togglePause(conn.tabName, conn.spreadsheetUrl, tr); }, pauseTooltip));
           tdActions.appendChild(_makeActionBtn('Delete', 'danger', 'Delete ' + conn.tabName, function() { deleteConn(conn.tabName, conn.spreadsheetUrl); }));
         }
         tr.appendChild(tdActions);
