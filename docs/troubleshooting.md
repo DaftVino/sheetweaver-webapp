@@ -25,9 +25,9 @@ Use **Clear Diagnostics** in the Admin panel to reset the event list after resol
 
 ## Emails Are Not Being Processed
 
-**Check whether the sync is on.**
-Open the web app dashboard. If a yellow banner says **"⚠️ Auto-Sync is Off,"** click
-**Enable 15-Min Auto-Sync**. Setup turns the sync on for you — this banner is a backup for
+**Check whether the loom is running.**
+Open the web app dashboard. If a yellow banner says **"⚠️ The Loom is Idle,"** click
+**Start the Loom**. Setup turns the loom on for you — this banner is a backup for
 the rare case where that failed.
 
 **Check execution logs.**
@@ -73,7 +73,7 @@ If the tab is still empty after 30+ minutes:
 
 ---
 
-## Action Buttons (Edit/Delete/Pause/Repair) Don't Work
+## Action Buttons (Edit/Delete/Rest/Mend) Don't Work
 
 Tab names and label names with apostrophes, quotes, or other special characters are now handled correctly. Dashboard action buttons use DOM event listeners rather than inline `onclick` attributes.
 
@@ -81,7 +81,7 @@ If buttons are still unresponsive, open the browser console (F12 → Console) an
 
 ---
 
-## The Dashboard Shows No Connections After Setup
+## The Dashboard Shows No Threads After Setup
 
 The connection registry is stored in Script Properties, one key per connection. If it was cleared or setup failed silently:
 
