@@ -4,6 +4,28 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1] - 2026-07-03
+
+The app now speaks its own vocabulary: connections are threads, syncing is weaving, the
+dashboard is the loom. Foundation tokens for the upcoming loom status line and weave
+animation are also in place.
+
+### Added
+- `--thread` design token (teal/thread accent) and `--duration-fast`/`--duration-base`
+  motion tokens in all three themes, ready for upcoming loom status-line and weave-animation
+  features. Not yet used by any element.
+- `Start the Loom` button now shows a tooltip spelling out the 15-minute auto-weave
+  cadence that its shorter label dropped.
+
+### Changed
+- Renamed ~35 user-facing strings across the dashboard, setup wizard, and status
+  messages to a consistent loom/weave vocabulary: connections are now "threads,"
+  syncing is "weaving," pausing is "resting," repairing is "mending," and the
+  dashboard reads as "the loom." Full details in `design/sheetweaver-ui-rename.md`.
+- Existing motion durations (120ms/180ms) now reference the new tokens instead of
+  repeating the literal values in five separate CSS rules — same values, one source
+  of truth. The retro theme's snappier 80ms button press is intentionally unchanged.
+
 ## [2.1.0] - 2026-07-03
 
 Registry sharding: removes the hard ~9-connection ceiling that was about to break writes for

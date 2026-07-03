@@ -18,7 +18,8 @@ Strings-only task: no logic, markup structure, CSS, function names, variable nam
 1. **`Saving...` → `Threading...`** (not `Weaving...`). The doc's own Rule 1 reserves "Weaving" for a sync actively running; the save spinner is a different state and must not share the word.
 2. **`Paused` chip → `Resting`** (not `Loom Unspun`). Pairs with the `Rest` row action; "Loom Unspun" reads as the whole loom stopped, which is the separate no-trigger state. Per-thread vs whole-loom states stay distinct.
 3. **Delete modal body keeps explicitness:** "This will **permanently delete** '…' from the loom and stop scanning emails for this label." (preserve interpolated label). Title `Cut This Thread?` and button `Yes, Cut the Thread` stay as the doc says — but the word "delete" must survive in the body. Destructive confirms for office staff must be unmistakable.
-4. **Auto-sync button text is `Start the Loom` only.** The doc's `Start the Loom (15-min Auto-Weave)` is 10 chars longer than today's button and wraps at phone widths. The "(15-min Auto-Weave)" detail moves to a tooltip/`title` or subtitle line.
+4. **Auto-sync button text is `Start the Loom` only.** The doc's `Start the Loom (15-min Auto-Weave)` is 10 chars longer than today's button and wraps at phone widths. The "(15-min Auto-Weave)" detail moves to a tooltip/`title` or subtitle line. Also update the two cross-references that name this button by text: `Index.html:1514` (repair-success toast: "...click \"Enable Auto-Sync\" to re-enable.") and `Index.html:2135` (auto-sync-failure banner: "...click Enable Auto-Sync from the dashboard.") — both must read "Start the Loom" so they don't point users at a button name that no longer exists.
+5. **`Index.html:718`'s account-login banner ("Connected: {email}") is explicitly untouched.** It reports which Google account is logged in — an unrelated concept to thread/capture status — and is not covered by the source doc's "Sections to leave entirely untouched" list. Do not rename it to "Threaded: {email}".
 
 ## Acceptance Criteria
 
@@ -30,6 +31,7 @@ Strings-only task: no logic, markup structure, CSS, function names, variable nam
 6. No identifier, storage key, trigger name, or debug payload key changed (doc Rule 4). If any UI string doubles as a stored value, it is mapped at the display layer and flagged in the PR — never migrated.
 7. Every renamed button and status chip verified no-wrap/no-overflow at 599px and 360px in all 3 themes (this UI seeds the Gmail add-on port).
 8. `docs/troubleshooting.md` and GitHub issue templates updated where they reference renamed UI elements (doc Rule 5), e.g. `docs/standardize-documentation` cross-refs.
+9. **Mechanical completeness check:** post-implementation, grep every OLD string from the source doc's mapping tables (plus `Enable Auto-Sync`/`Enable 15-Min Auto-Sync`, the two cross-reference sites) against `Index.html`. Every surviving hit must be inside an explicitly-untouched section (Header/Global, Label/Permission Errors, Admin UI, Debug Fallback, table column headers, the `Index.html:718` account banner) or a doc file — zero unexplained survivors. List any surviving hit and its justification in the PR description.
 
 ## Testing Plan
 

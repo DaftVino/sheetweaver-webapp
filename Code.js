@@ -1,4 +1,4 @@
-const APP_VERSION = '2.1.0';
+const APP_VERSION = '2.1.1';
 
 const DEFAULT_SPREADSHEET_URL = '';
 const USER_DEFAULT_SPREADSHEET_URL_KEY = 'user_default_spreadsheet_url';
