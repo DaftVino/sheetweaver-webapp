@@ -625,11 +625,11 @@
     <div class="container">
       <div id="deleteModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="deleteModalTitle">
         <div class="modal-content">
-          <h3 id="deleteModalTitle" style="margin-top:0; color: var(--danger);">Confirm Deletion</h3>
+          <h3 id="deleteModalTitle" style="margin-top:0; color: var(--danger);">Cut This Thread?</h3>
           <p id="deleteModalText" style="line-height: 1.5;">Are you sure?</p>
           <div class="modal-buttons">
             <button id="deleteModalCancelBtn" class="btn-cancel" onclick="closeDeleteModal()">Cancel</button>
-            <button class="btn-delete" onclick="executeDelete()">Yes, Delete Capture</button>
+            <button class="btn-delete" onclick="executeDelete()">Yes, Cut the Thread</button>
           </div>
         </div>
       </div>
@@ -1586,7 +1586,7 @@
       function deleteConn(tabName, url) {
         pendingDeleteTab = tabName;
         pendingDeleteUrl = url;
-        document.getElementById('deleteModalText').innerText = 'Are you sure you want to delete the capture configuration for "' + tabName + '"?\n\nThis will stop scanning emails for this label.';
+        document.getElementById('deleteModalText').innerText = 'This will permanently delete "' + tabName + '" from the loom and stop scanning emails for this label.';
         document.getElementById('deleteModal').style.display = 'flex';
         setTimeout(function() { const c = document.getElementById('deleteModalCancelBtn'); if (c) c.focus(); }, 50);
       }
