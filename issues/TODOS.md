@@ -38,60 +38,25 @@
 
 **Depends on / blocked by:** registry sharding (Phase 1) landing first; a decision on how repair works without the registry copy.
 
-## Deferred from registry-sharding adversarial review (2026-07-03)
+## Completed
 
-### Enforce (or alert on) the 500KB total-store cap
+### getDashboardData() over-exposes connection metadata to non-owners
 
-**What:** `getAdminDiagnostics`'s `registryHealth.totalStoreBytes`/`totalStoreCap` (500KB) is reported in the admin panel but nothing actually checks it on any write path. Sharding removed the old single-9KB-blob ceiling but replaced it with an unbounded number of per-connection shards; nothing stops the total script-property store (shared across every user) from creeping toward GAS's real ~500KB ceiling as connections accumulate across the whole deployment.
+**What:** `getDashboardData()` sent `lastRunReportId`/`lastDurationMs` for every connection to every caller regardless of ownership — dead data for non-owned rows, never rendered anywhere in `Index.html`.
 
-**Why:** Once the real GAS quota is crossed, every `PropertiesService.setProperty` call for every user starts throwing — a store-wide outage, not a per-user one. Today's per-connection guard (D6) prevents any single record from being the cause, but says nothing about aggregate growth.
+**Completed:** `fix/registry-security-and-reliability-gaps` (2026-07-03) — those two fields are now included only for the caller's own connections. Every other field (userEmail, gmailLabel, spreadsheetUrl, lastError, lastCounts, etc.) is unchanged for all rows, since those are actively used by the dashboard's existing team-visibility feature; restricting those further remains an open product question, not addressed by this fix.
 
-**Pros:**
-- Turns a silent, deployment-wide failure mode into a proactive admin alert or hard stop
-- The metric already exists in `getAdminDiagnostics` — this is surfacing/enforcing it, not building new plumbing
+### Enforce the 500KB total-store cap
 
-**Cons:**
-- This is a policy decision (hard cap on new connections? alert threshold? per-user quota?), not a one-line fix
-- No current deployment is anywhere near this ceiling, so it's not urgent
+**What:** `getAdminDiagnostics`'s `registryHealth.totalStoreBytes`/`totalStoreCap` (500KB) was reported but never enforced on any write path.
 
-**Context:** Surfaced by the Claude adversarial subagent during the 2026-07-03 `/ship` pre-landing review of the sharding work.
-
-**Depends on / blocked by:** none technically; needs a design decision on the enforcement policy before implementation.
+**Completed:** `fix/registry-security-and-reliability-gaps` (2026-07-03) — `setupSpreadsheet` now hard-blocks a new connection save (mirroring the existing 9KB per-connection guard, D6) if it would push the total store over the cap. Only blocks net growth: in-place edits/repairs of existing connections are never blocked, even when the store is already at/over cap. Migration and per-shard writes (`_writeConnection`) intentionally remain pure tally/report paths, unchanged.
 
 ### Recovery path for connection records that fail migration
 
-**What:** `_migrateRegistryIfNeeded` now skips and logs (rather than crashing on) a record whose shard write throws mid-migration, but `capture_registry` is still deleted unconditionally afterward. The failed record survives only in the forensic `capture_registry_backup_v1` blob — the affected user's connection silently disappears from their dashboard and stops syncing, with no in-app error, until an admin manually reconstructs a shard from the backup JSON.
+**What:** A record whose shard write failed during migration vanished silently — `capture_registry` was deleted unconditionally regardless of per-record failures, and the failure log only captured `tabName` (not unique across users).
 
-**Why:** This is the right tradeoff for preventing a store-wide migration-retry-loop outage (see the `_migrateRegistryIfNeeded` fix in this same release), but it trades a total outage for a silent per-user data-loss-looking state with no documented recovery runbook.
-
-**Pros:**
-- Small, scoped fix: either a documented manual-recovery runbook, or a lightweight "N connections failed to migrate, contact admin" surface in the dashboard/admin panel
-
-**Cons:**
-- Needs a decision on whether this belongs in-product (dashboard notice) or is purely an admin/support runbook concern
-
-**Context:** Surfaced by the Claude adversarial subagent during the 2026-07-03 `/ship` pre-landing review, alongside the migration write-loop try/catch fix it's a direct consequence of.
-
-**Depends on / blocked by:** none; ready to design whenever prioritized.
-
-## Deferred from Phase 3 (loom-b-c) adversarial review (2026-07-03)
-
-### getDashboardData() exposes full connection metadata to every caller, filtered client-side only
-
-**What:** `getDashboardData()` (Code.js) returns every registry entry's full metadata — `spreadsheetUrl`, `gmailLabel`, `tabName`, sync status/errors — to any authenticated caller of the deployment, regardless of ownership. The `isOwner` flag is computed server-side but filtering on it (which rows to actually act on) happens client-side in `Index.html`; the server does not scope the response to the caller's own connections. On a deployment with `access: ANYONE` / `executeAs: USER_ACCESSING` (per `appsscript.json`), this means any user of the deployment can read other users' spreadsheet URLs and Gmail label names by inspecting the RPC payload directly (devtools/network tab), even though the UI never surfaces it.
-
-**Why:** Surfaced by the Claude adversarial subagent during the 2026-07-03 `/ship` pre-landing review of the Phase 3 (loom-b/loom-c) work, while investigating whether the new `totalRowsWoven` deployment-wide counter crossed a trust boundary. The counter itself is a comparatively minor addition to this much larger pre-existing hole — flagging both together since they're the same category of issue.
-
-**Pros:**
-- Fix is bounded to one function: scope `getDashboardData()`'s per-connection metadata based on `isOwner`, returning only what non-owners are meant to see (or nothing) for connections they don't own
-**Cons:**
-- Needs a decision on what non-owner rows should show in the dashboard today (the UI does render other users' rows in some admin/shared context — needs review before narrowing the payload) — not a one-line fix without checking why non-owned rows are returned at all
-
-**Context:** Pre-existing behavior, not introduced by Phase 3 — predates the loom-b/loom-c branch. Deferred rather than fixed inline to avoid scope creep on an unrelated ship.
-
-**Depends on / blocked by:** none technically; needs a design decision on why non-owned connection rows are returned to the client at all before scoping the fix.
-
-## Completed
+**Completed:** `fix/registry-security-and-reliability-gaps` (2026-07-03) — the failure log payload now includes `userEmail`/`spreadsheetUrl`, and `getAdminDiagnostics` surfaces a `registryHealth.migrationFailures` summary derived from the diagnostic event log it already fetches (no new RPC, no new persistent state). Accepted limitation: `DIAG_MAX` (50) caps the event log, so a very old failure can still scroll out of visibility before an admin checks — documented in code, not blocking.
 
 ### Test coverage for lock-acquire-failure paths in togglePauseConnection/deleteConnection
 

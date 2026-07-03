@@ -160,6 +160,16 @@ function getAdminDiagnostics() {
       return raw ? JSON.parse(raw) : null;
     } catch(e) { return null; }
   }).filter(Boolean);
+  // Bug C fix (2026-07-03): derive a migration-failure summary from the
+  // already-fetched diag event log — no new RPC, no new persistent property
+  // key, per CLAUDE.md's "never add a new on-load RPC" rule. Accepted
+  // limitation: DIAG_MAX (50) caps the event log, so a very old migration
+  // failure can scroll out of `events` (and thus out of this summary) before
+  // an admin checks diagnostics — still strictly better than the previous
+  // zero-visibility state.
+  const migrationFailureEvents = events.filter(function(ev) {
+    return ev.where === '_migrateRegistryIfNeeded:writeFailed';
+  });
   const all = props.getProperties();
   const registry = _readRegistry(props, all);
   _flushCorruptShardLogs();
@@ -193,7 +203,13 @@ function getAdminDiagnostics() {
       perConnCap: MAX_CONN_BYTES,
       totalStoreBytes: totalStoreBytes,
       totalStoreCap: MAX_TOTAL_STORE_BYTES,
-      hasTrigger: checkUserTrigger()
+      hasTrigger: checkUserTrigger(),
+      migrationFailures: {
+        count: migrationFailureEvents.length,
+        records: migrationFailureEvents.map(function(ev) {
+          return { tabName: ev.tabName, userEmail: ev.userEmail, spreadsheetUrl: ev.spreadsheetUrl, ts: ev.ts, message: ev.message };
+        })
+      }
     }
   };
 }
@@ -568,7 +584,10 @@ function _migrateRegistryIfNeeded(props) {
           // future call re-walks the same records and re-throws at the same
           // one: a permanent, store-wide outage. Skip and log instead, same
           // shape as _flushRegistryResults' write-failure handling.
-          migrationWriteFailures.push({ tabName: conn.tabName, errorClass: e.name, message: e.message });
+          // Bug C fix (2026-07-03): userEmail/spreadsheetUrl added so an admin
+          // can actually identify the affected connection from this log entry
+          // alone — tabName alone isn't unique across users.
+          migrationWriteFailures.push({ tabName: conn.tabName, userEmail: conn.userEmail, spreadsheetUrl: conn.spreadsheetUrl, errorClass: e.name, message: e.message });
         }
       }
       // else: a live shard (or an earlier record in this same blob) already
@@ -636,7 +655,7 @@ function getDashboardData() {
       }
     }
 
-    connections.push({
+    const row = {
       userEmail: conn.userEmail,
       gmailLabel: conn.gmailLabel,
       tabName: conn.tabName,
@@ -650,11 +669,22 @@ function getDashboardData() {
       lastSyncTime: conn.lastSyncTime || null,
       lastRunStatus: conn.lastRunStatus || null,
       lastRunAt: conn.lastRunAt || null,
-      lastRunReportId: conn.lastRunReportId || null,
       lastError: conn.lastError || null,
-      lastCounts: conn.lastCounts || null,
-      lastDurationMs: conn.lastDurationMs || null
-    });
+      lastCounts: conn.lastCounts || null
+    };
+    // Bug A fix (security review, 2026-07-03): lastRunReportId/lastDurationMs
+    // are never rendered for a non-owned row anywhere in Index.html (only
+    // getDebugSnapshot's already-owner-scoped snapshot reads them) — strip
+    // them for non-owners as pure data-minimization. Every other field here
+    // stays for all rows: userEmail/gmailLabel/spreadsheetUrl/lastSyncTime/
+    // lastError/lastCounts are actively rendered for non-owned rows today
+    // (the dashboard's intentional "team visibility" feature) and removing
+    // those would be a UX change, not a bug fix — tracked separately if wanted.
+    if (isOwner) {
+      row.lastRunReportId = conn.lastRunReportId || null;
+      row.lastDurationMs = conn.lastDurationMs || null;
+    }
+    connections.push(row);
   });
 
   const hasTrigger = checkUserTrigger();
@@ -1061,7 +1091,8 @@ function setupSpreadsheet(labelName, tabName, targetUrl, headerConfigs, initialS
       return { success: false, error: 'Could not acquire lock, please retry.', reportId: reportId };
     }
     try {
-      const registry = _readRegistry(props);
+      const all = props.getProperties();
+      const registry = _readRegistry(props, all);
 
       // Resolve which existing shard (if any) this save updates in place: by
       // connId when the caller has one (edit/repair flows — survives tab
@@ -1127,6 +1158,27 @@ function setupSpreadsheet(labelName, tabName, targetUrl, headerConfigs, initialS
       // (ship pre-landing review, Claude adversarial subagent).
       if (_utf8ByteLength(JSON.stringify(conn)) >= MAX_CONN_BYTES) {
         return { success: false, error: 'This capture has too many columns/rules to save (limit ~9KB). Remove some columns.' };
+      }
+
+      // 500KB total-store guard (Bug B, 2026-07-03): only blocks net growth.
+      // An in-place edit of an existing shard (D9) that doesn't grow the
+      // store — the common case for saves/repairs of an existing connection
+      // — is never blocked here, even when the store is already at/over cap,
+      // since it isn't the thing pushing the total toward the ceiling.
+      // Reuses `all` (captured above alongside the registry read) rather
+      // than a second props.getProperties() call. Mirrors D6 above: hard
+      // block, same error-return shape, same lock, byte-accurate sizing.
+      const newConnBytes = _utf8ByteLength(JSON.stringify(conn));
+      const oldConnBytes = existing ? _utf8ByteLength(all[_connKey(existing)] || '') : 0;
+      const netNewBytes = newConnBytes - oldConnBytes;
+      if (netNewBytes > 0) {
+        let totalStoreBytes = 0;
+        Object.keys(all).forEach(function(key) {
+          totalStoreBytes += _utf8ByteLength(key) + _utf8ByteLength(all[key]);
+        });
+        if (totalStoreBytes + netNewBytes >= MAX_TOTAL_STORE_BYTES) {
+          return { success: false, error: 'Storage is full deployment-wide; new connections cannot be saved right now. Contact your admin.' };
+        }
       }
 
       _writeConnection(props, conn);

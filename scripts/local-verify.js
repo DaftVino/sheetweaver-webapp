@@ -383,6 +383,49 @@ function checkMigration(codeSource) {
 }
 
 // ==========================================
+// Bug C fix (2026-07-03): a per-record migration shard-write failure must be
+// (a) logged with enough identity (userEmail) to actually find the affected
+// user, and (b) surfaced in getAdminDiagnostics()'s registryHealth without a
+// new RPC — derived from the already-fetched diag events array.
+// ==========================================
+function checkMigrationFailureVisibility(codeSource) {
+  try {
+    const blob = [{ userEmail: 'failuser@example.com', tabName: 'FailTab', spreadsheetUrl: 'https://big' }];
+    const propStore = { capture_registry: JSON.stringify(blob), admin_email: 'admin@example.com' };
+    const ctx = makeShardedContext({ propStore, activeEmail: 'admin@example.com' });
+    vm.runInContext(codeSource, ctx);
+    // Wrap setProperty so only the shard write throws (simulating an
+    // oversized migrated record exceeding the per-property size cap).
+    vm.runInContext(
+      `(function() {
+        var props = PropertiesService.getScriptProperties();
+        var origSetProperty = props.setProperty;
+        props.setProperty = function(k, v) {
+          if (k.indexOf('capture_conn_') === 0) throw new RangeError('Value is too large: ' + k);
+          return origSetProperty(k, v);
+        };
+        globalThis._testProps = props;
+      })();`,
+      ctx
+    );
+    vm.runInContext('_migrateRegistryIfNeeded(_testProps)', ctx);
+
+    const diagEntries = Object.keys(propStore).filter(k => k.indexOf('diag_') === 0).map(k => JSON.parse(propStore[k]));
+    const failureDiag = diagEntries.find(d => d.where === '_migrateRegistryIfNeeded:writeFailed');
+    check('_migrateRegistryIfNeeded logs userEmail in the writeFailed payload (Bug C part 1)',
+      !!failureDiag && failureDiag.userEmail === 'failuser@example.com' && failureDiag.tabName === 'FailTab');
+
+    const diag = vm.runInContext('getAdminDiagnostics()', ctx);
+    check('getAdminDiagnostics surfaces registryHealth.migrationFailures from the already-fetched events array (Bug C part 2)',
+      !!diag.registryHealth && !!diag.registryHealth.migrationFailures &&
+      diag.registryHealth.migrationFailures.count >= 1 &&
+      diag.registryHealth.migrationFailures.records.some(r => r.userEmail === 'failuser@example.com' && r.tabName === 'FailTab'));
+  } catch (e) {
+    failures.push('migration failure visibility: ' + e.message);
+  }
+}
+
+// ==========================================
 // Write-path entry points: migration gating, own-lock failure shapes,
 // shard write isolation, size guard, id-threaded edit flow
 // ==========================================
@@ -553,6 +596,66 @@ function checkWritePathEntryPoints(codeSource) {
       result && result.success === false && /too many columns\/rules/.test(result.error));
   } catch (e) {
     failures.push('9KB size guard UTF-8 byte counting: ' + e.message);
+  }
+
+  // 500KB total-store guard (Bug B, 2026-07-03): a new-connection save that
+  // would push the total store over MAX_TOTAL_STORE_BYTES is rejected.
+  try {
+    const bigValue = 'x'.repeat(499800);
+    const propStore = { padding_key: bigValue };
+    const ctx = makeShardedContext({ propStore, activeEmail: 'tester@example.com' });
+    vm.runInContext(codeSource, ctx);
+    const result = vm.runInContext(
+      "setupSpreadsheet('Label', 'NewTab', 'https://x', [{name:'Subject',pattern:'EMAIL_ID'}], '50', null, true)",
+      ctx
+    );
+    check('setupSpreadsheet rejects a new connection that would push the total store over MAX_TOTAL_STORE_BYTES (Bug B)',
+      result && result.success === false && /storage is full/i.test(result.error));
+    check('setupSpreadsheet writes no shard when the total-store guard rejects', shardKeysIn(propStore).length === 0);
+  } catch (e) {
+    failures.push('total-store guard, new connection rejected: ' + e.message);
+  }
+
+  // An in-place edit of an existing connection at the same size still
+  // succeeds even when the store is already at/over cap, since it isn't net
+  // growth (Bug B guard must only block growth, never edits).
+  try {
+    const existingConn = {
+      id: 'edit-under-cap', userEmail: 'tester@example.com', gmailLabel: 'Label', tabName: 'EditMe',
+      spreadsheetUrl: 'https://x', sheetId: 1, isPaused: false, initialSync: '50',
+      lastSyncTime: null, headerConfigs: [{ name: 'Subject', pattern: 'EMAIL_ID' }]
+    };
+    const bigValue = 'x'.repeat(499800);
+    const propStore = {
+      padding_key: bigValue,
+      'capture_conn_edit-under-cap': JSON.stringify(existingConn)
+    };
+    const ctx = makeShardedContext({ propStore, activeEmail: 'tester@example.com' });
+    vm.runInContext(codeSource, ctx);
+    const result = vm.runInContext(
+      "setupSpreadsheet('Label', 'EditMe', 'https://x', [{name:'Subject',pattern:'EMAIL_ID'}], '50', 'EditMe', true, 'edit-under-cap')",
+      ctx
+    );
+    check('setupSpreadsheet allows an in-place edit that does not grow the store even when already over cap (Bug B)',
+      result && result.success === true);
+  } catch (e) {
+    failures.push('total-store guard, edit-in-place allowed: ' + e.message);
+  }
+
+  // Comfortably under the cap: succeeds normally, one shard written.
+  try {
+    const propStore = {};
+    const ctx = makeShardedContext({ propStore, activeEmail: 'tester@example.com' });
+    vm.runInContext(codeSource, ctx);
+    const result = vm.runInContext(
+      "setupSpreadsheet('Label', 'FreshTab', 'https://x', [{name:'Subject',pattern:'EMAIL_ID'}], '50', null, true)",
+      ctx
+    );
+    check('setupSpreadsheet succeeds normally when comfortably under MAX_TOTAL_STORE_BYTES (Bug B)',
+      result && result.success === true);
+    check('setupSpreadsheet writes exactly one shard for the normal case', shardKeysIn(propStore).length === 1);
+  } catch (e) {
+    failures.push('total-store guard, comfortably-under-cap succeeds: ' + e.message);
   }
 
   // id-threaded edit flow: getEditConfig returns id; setupSpreadsheet updates
@@ -942,6 +1045,49 @@ function checkLoomBHelpers(codeSource) {
     check('enableUserTrigger schedules processEmails using TRIGGER_INTERVAL_MINUTES (not a stray literal)', capturedInterval === 15);
   } catch (e) {
     failures.push('enableUserTrigger interval wiring: ' + e.message);
+  }
+}
+
+// ==========================================
+// Bug A (security review, 2026-07-03): getDashboardData() must not include
+// lastRunReportId/lastDurationMs for a connection the caller doesn't own —
+// those two fields are never rendered for a non-owned row anywhere in
+// Index.html, unlike userEmail/gmailLabel/spreadsheetUrl/lastError/lastCounts
+// which are actively shown for every row (the dashboard's team-visibility
+// feature) and are intentionally NOT stripped here.
+// ==========================================
+function checkDashboardDataFieldMinimization(codeSource) {
+  try {
+    const ownerConn = {
+      id: 'own-1', userEmail: 'owner@example.com', gmailLabel: 'L', tabName: 'OwnerTab',
+      spreadsheetUrl: 'https://x', sheetId: 1, isPaused: false,
+      lastRunReportId: 'rep-1', lastError: 'boom', lastCounts: { scanned: 1, new: 1, updated: 0 }, lastDurationMs: 42
+    };
+    const otherConn = {
+      id: 'other-1', userEmail: 'other@example.com', gmailLabel: 'L2', tabName: 'OtherTab',
+      spreadsheetUrl: 'https://y', sheetId: 2, isPaused: false,
+      lastRunReportId: 'rep-2', lastError: 'boom2', lastCounts: { scanned: 2, new: 2, updated: 0 }, lastDurationMs: 99
+    };
+    const propStore = {
+      'capture_conn_own-1': JSON.stringify(ownerConn),
+      'capture_conn_other-1': JSON.stringify(otherConn)
+    };
+    const ctx = makeShardedContext({ propStore, activeEmail: 'owner@example.com' });
+    vm.runInContext(codeSource, ctx);
+    const data = vm.runInContext('getDashboardData()', ctx);
+    const own = data.connections.find(c => c.tabName === 'OwnerTab');
+    const other = data.connections.find(c => c.tabName === 'OtherTab');
+
+    check('getDashboardData includes lastRunReportId/lastDurationMs for an owner\'s own connection',
+      !!own && own.lastRunReportId === 'rep-1' && own.lastDurationMs === 42);
+    check('getDashboardData strips lastRunReportId for a non-owned connection',
+      !!other && !Object.prototype.hasOwnProperty.call(other, 'lastRunReportId'));
+    check('getDashboardData strips lastDurationMs for a non-owned connection',
+      !!other && !Object.prototype.hasOwnProperty.call(other, 'lastDurationMs'));
+    check('getDashboardData still returns lastError/lastCounts for a non-owned connection (rendered in the dashboard today — not stripped without a product decision)',
+      !!other && other.lastError === 'boom2' && other.lastCounts && other.lastCounts.new === 2);
+  } catch (e) {
+    failures.push('getDashboardData field minimization: ' + e.message);
   }
 }
 
@@ -1346,6 +1492,7 @@ checkScriptSyntax('Code.js', codeSource);
 checkPureHelpers(codeSource);
 checkRegistryHelpers(codeSource);
 checkMigration(codeSource);
+checkMigrationFailureVisibility(codeSource);
 checkWritePathEntryPoints(codeSource);
 checkPhase3Helpers(codeSource);
 checkIsAdmin(codeSource);
@@ -1353,6 +1500,7 @@ checkAdminUnauthorizedShape(codeSource);
 checkRegistryOwnership(codeSource);
 checkReadEntryPointMigration(codeSource);
 checkLoomBHelpers(codeSource);
+checkDashboardDataFieldMinimization(codeSource);
 checkRepairConnectionIdThreading(codeSource);
 
 const htmlSource = read('Index.html');
