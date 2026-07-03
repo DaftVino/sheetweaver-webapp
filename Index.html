@@ -784,7 +784,7 @@
           </tbody>
         </table>
 
-        <div id="loomStatusFooter" class="loom-status-footer" style="display:none;"></div>
+        <div id="loomStatusFooter" class="loom-status-footer" style="display:none;" role="status" aria-live="polite"></div>
 
         <div id="adminPanel" style="display:none;" class="admin-panel">
           <div class="admin-panel-header">
@@ -1258,7 +1258,22 @@
       // Loom B: quiet ambient status line — next-weave countdown + lifetime rows-woven
       // count. Scoped to the current user's own active connections (mirrors the sync
       // banner's ownership scoping, since hasTrigger is per-user).
+      //
+      // Red-team pre-landing review finding: the countdown text was computed once per
+      // dashboard load and never updated again, so it silently drifted from reality the
+      // longer the tab stayed open (aria-live="polite" on the footer was decorative —
+      // nothing ever re-triggered it). _loomFooterTimer re-renders from the last known
+      // data every 60s (pure client-side math, no new RPC) so the countdown and the
+      // aria-live announcement both stay live for as long as the dashboard is open.
+      var _lastLoomFooterData = null;
+      var _loomFooterTimer = null;
       function _renderLoomFooter(data) {
+        _lastLoomFooterData = data;
+        if (!_loomFooterTimer) {
+          _loomFooterTimer = setInterval(function() {
+            if (_lastLoomFooterData) _renderLoomFooter(_lastLoomFooterData);
+          }, 60000);
+        }
         const el = document.getElementById('loomStatusFooter');
         const owned = data.connections.filter(c => c.isOwner && !c.isPaused);
         if (owned.length === 0) {
@@ -2169,18 +2184,26 @@
         _weaveCleanupTimers.forEach(clearTimeout);
         _weaveCleanupTimers = [];
       }
-      // Tears down any in-flight weave (timers + DOM nodes) and reveals the
-      // title. Called both at the start of a fresh runWeave() (double-fire
-      // guard) and whenever the user navigates away from step-3 mid-animation
-      // (nextStep()) — without the latter, "Return to the Loom" clicked during
-      // the ~2s animation left orphaned overlay/spark/car nodes drawing on top
-      // of the dashboard (adversarial review finding).
-      function _weaveTeardown() {
+      // Clears timers and removes any in-flight overlay/dots/car DOM nodes,
+      // WITHOUT touching the title's weave-pending class. Used by runWeave()'s
+      // double-fire guard, where the title must stay hidden — the fresh run
+      // starting right after this is about to re-animate it (red team finding:
+      // the combined teardown below used to reveal the title at t=0 on every
+      // normal single-save, defeating the whole "resolves into the title" design).
+      function _weaveClearStaleDom() {
         _weaveClearTimers();
         ['weaveOverlay', 'weaveDots', 'weaveCar'].forEach(function(id) {
           var stale = document.getElementById(id);
           if (stale && stale.parentNode) stale.parentNode.removeChild(stale);
         });
+      }
+      // Full teardown: clears timers/DOM (above) AND reveals the title. Called
+      // whenever the user navigates away from step-3 mid-animation (nextStep())
+      // — without this, "Return to the Loom" clicked during the ~2s animation
+      // left orphaned overlay/spark/car nodes drawing on top of the dashboard
+      // (adversarial review finding) and the title stuck invisible.
+      function _weaveTeardown() {
+        _weaveClearStaleDom();
         var title = document.getElementById('successTitle');
         if (title) title.classList.remove('weave-pending');
       }
@@ -2188,9 +2211,10 @@
         var title = document.getElementById('successTitle');
         try {
           // Double-fire guard: if a prior run is still in flight (two new
-          // connections created back-to-back), tear it down before starting a
-          // fresh one rather than letting two overlays run concurrently.
-          _weaveTeardown();
+          // connections created back-to-back), clear its timers/DOM before
+          // starting a fresh one — but do NOT reveal the title here, the new
+          // run is about to re-hide-then-animate it.
+          _weaveClearStaleDom();
 
           if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
             title.classList.remove('weave-pending');
@@ -2355,12 +2379,15 @@
             _weaveCleanupTimers.push(setTimeout(function() {
               merged.style.opacity = '0';
               var spread = Math.max(tr.width, 120);
+              // Pre-landing review finding: batch all writes-then-reads-then-writes
+              // into one pass per phase instead of interleaving per spark, so the
+              // browser only forces one layout flush for all 9 sparks combined.
+              sparks.forEach(function(sp2) { sp2.style.opacity = '1'; });
+              svg.getBoundingClientRect();
               sparks.forEach(function(sp2, i) {
                 var f = i / (SPARKS - 1) - 0.5;
                 var dx = f * spread * (0.85 + Math.random() * 0.3);
                 var dy = (Math.random() - 0.5) * 14;
-                sp2.style.opacity = '1';
-                sp2.getBoundingClientRect();
                 sp2.style.transition = 'transform ' + tBurst + 'ms cubic-bezier(0.2, 0.6, 0.4, 1), opacity ' + tBurst + 'ms ease-out';
                 sp2.style.transform = 'translate(' + dx.toFixed(1) + 'px, ' + dy.toFixed(1) + 'px)';
                 sp2.style.opacity = '0';
