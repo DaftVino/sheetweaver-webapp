@@ -866,7 +866,7 @@
         <p>Your configuration rules have been saved successfully.</p>
         
         <div class="info-box neutral-box">
-          <strong>⏱️ Sync Schedule:</strong> Please note that your data will not populate in the spreadsheet immediately. The background auto-sync runs on a 15-minute cycle. The captured data should appear in the spreadsheet by <strong><span id="syncTimeEstimate">...</span></strong>.
+          <strong>⏱️ Weave Schedule:</strong> Please note that your data will not populate in the spreadsheet immediately. The loom weaves on a 15-minute cycle. The woven data should appear in the spreadsheet by <strong><span id="syncTimeEstimate">...</span></strong>.
         </div>
         <p id="triggerStatusMsg" style="margin-top: var(--space-2); font-size: var(--font-sm);"></p>
 
@@ -1221,7 +1221,7 @@
         } else if (hasOwnedConnections) {
           bannerContainer.innerHTML = '<div class="sync-banner">' +
             '<span><strong>⚠️ The Loom is Idle:</strong> start the loom for your background weaving to work.</span>' +
-            '<button onclick="enableSync(this)" style="padding: var(--space-2) var(--space-3); font-size: var(--font-sm);">Start the Loom</button>' +
+            '<button onclick="enableSync(this)" title="15-min Auto-Weave" style="padding: var(--space-2) var(--space-3); font-size: var(--font-sm);">Start the Loom</button>' +
             '</div>';
         } else {
           bannerContainer.innerHTML = '';
