@@ -290,9 +290,12 @@ No, as long as you update the **same Apps Script project**. `clasp push` updates
 editing the existing live deployment to use **New version** updates the deployment version. These steps
 do not wipe Script Properties, User Properties, existing Sheets, or user-created triggers.
 
-Existing connections stay in the `capture_registry` Script Property and should continue to appear and
-sync after the update. New fields added by later versions, such as last-run status or sync cursors,
-are additive and are filled in as each connection runs.
+Existing connections stay in Script Properties and should continue to appear and sync after the
+update. As of v2.1.0, each connection is stored in its own `capture_conn_<id>` Script Property
+instead of one shared `capture_registry` blob; updating from an older version migrates the legacy
+blob into per-connection shards automatically the first time the registry is read or written, with
+no action needed from the admin or users. New fields added by later versions, such as last-run
+status or sync cursors, are additive and are filled in as each connection runs.
 
 Users should not need to recreate connections. They may need to reauthorize if the update adds new
 OAuth scopes, click **Enable Auto-Sync** if they never had a trigger, or repair/recreate a connection
