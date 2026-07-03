@@ -1502,7 +1502,7 @@
         btn.innerText = "Stringing the loom...";
         btn.disabled = true;
         google.script.run
-          .withFailureHandler(function(error) { _logFailure('enableUserTrigger', error, null); showStatus('Error enabling sync: ' + (error && error.message ? error.message : error), 'error'); })
+          .withFailureHandler(function(error) { _logFailure('enableUserTrigger', error, null); showStatus('Error starting the loom: ' + (error && error.message ? error.message : error), 'error'); })
           .withSuccessHandler(function() { loadDashboard(); })
           .enableUserTrigger();
       }
@@ -1573,7 +1573,7 @@
       function togglePause(tabName, url, rowEl) {
         _setRowLoading(rowEl, 'Re-threading…');
         google.script.run
-          .withFailureHandler(function(error) { _logFailure('togglePauseConnection', error, null); showStatus('Error toggling pause: ' + (error && error.message ? error.message : error), 'error'); loadDashboard(); })
+          .withFailureHandler(function(error) { _logFailure('togglePauseConnection', error, null); showStatus('Error resting/weaving thread: ' + (error && error.message ? error.message : error), 'error'); loadDashboard(); })
           .withSuccessHandler(function(res) {
             if(!res.success) showStatus('Error: ' + res.error, 'error');
             loadDashboard();
