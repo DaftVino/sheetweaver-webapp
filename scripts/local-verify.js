@@ -279,6 +279,58 @@ function checkMigration(codeSource) {
     failures.push('migration merge-only: ' + e.message);
   }
 
+  // Intra-blob dedup (ship review fix): two blob records sharing the same
+  // identity triple — plausible residue from the pre-sharding hijack bug
+  // (commit 1e6fc9f) — must collapse into ONE shard, not fork into two
+  // permanent shards for one logical connection.
+  try {
+    const dupA = { userEmail: 'a@example.com', tabName: 'Dup', spreadsheetUrl: 'https://x', lastSyncTime: 1 };
+    const dupB = { userEmail: 'a@example.com', tabName: 'Dup', spreadsheetUrl: 'https://x', lastSyncTime: 2 };
+    const propStore = { capture_registry: JSON.stringify([dupA, dupB]) };
+    const ctx = makeShardedContext({ propStore });
+    vm.runInContext(codeSource, ctx);
+    vm.runInContext('_migrateRegistryIfNeeded(PropertiesService.getScriptProperties())', ctx);
+    check('Migration collapses duplicate-identity blob records into a single shard (ship review fix)',
+      shardKeysIn(propStore).length === 1);
+  } catch (e) {
+    failures.push('migration intra-blob dedup: ' + e.message);
+  }
+
+  // Backup-write failure (ship review fix): if the raw blob itself is too
+  // large for a single Script Property (the exact registries this migration
+  // exists to help), the backup write must not block deleting the source key
+  // — otherwise migration retries and re-throws forever.
+  try {
+    const blob = [{ userEmail: 'a@example.com', tabName: 'A', spreadsheetUrl: 'https://x' }];
+    const rawBlob = JSON.stringify(blob);
+    const propStore = { capture_registry: rawBlob };
+    const ctx = makeShardedContext({ propStore });
+    vm.runInContext(codeSource, ctx);
+    // Wrap setProperty so only the backup-key write throws (simulating the
+    // backup itself exceeding the per-property size cap).
+    vm.runInContext(
+      `(function() {
+        var props = PropertiesService.getScriptProperties();
+        var origSetProperty = props.setProperty;
+        props.setProperty = function(k, v) {
+          if (k === 'capture_registry_backup_v1') throw new Error('Argument too large: value');
+          return origSetProperty(k, v);
+        };
+        globalThis._testProps = props;
+      })();`,
+      ctx
+    );
+    const result = vm.runInContext('_migrateRegistryIfNeeded(_testProps)', ctx);
+    check('_migrateRegistryIfNeeded tolerates a backup-write failure instead of looping forever (ship review fix)',
+      result && result.ok === true);
+    check('_migrateRegistryIfNeeded still deletes capture_registry when only the backup write fails',
+      propStore.capture_registry === undefined);
+    check('_migrateRegistryIfNeeded still writes the shard when only the backup write fails',
+      shardKeysIn(propStore).length === 1);
+  } catch (e) {
+    failures.push('migration backup-write failure: ' + e.message);
+  }
+
   // Corrupt blob: parse failure is tolerated, not fatal (D5).
   try {
     const propStore = { capture_registry: '{not valid json at all' };

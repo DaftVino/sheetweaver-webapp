@@ -160,13 +160,13 @@ function getAdminDiagnostics() {
       return raw ? JSON.parse(raw) : null;
     } catch(e) { return null; }
   }).filter(Boolean);
-  const registry = _readRegistry(props);
+  const all = props.getProperties();
+  const registry = _readRegistry(props, all);
   _flushCorruptShardLogs();
   const perUserCounts = {};
   registry.forEach(function(conn) {
     perUserCounts[conn.userEmail] = (perUserCounts[conn.userEmail] || 0) + 1;
   });
-  const all = props.getProperties();
   let largestConnBytes = 0;
   let largestConnTab = '';
   let totalStoreBytes = 0;
@@ -190,7 +190,7 @@ function getAdminDiagnostics() {
       perUserCounts: perUserCounts,
       largestConnBytes: largestConnBytes,
       largestConnTab: largestConnTab,
-      perConnCap: 9000,
+      perConnCap: MAX_CONN_BYTES,
       totalStoreBytes: totalStoreBytes,
       totalStoreCap: 500000,
       hasTrigger: checkUserTrigger()
@@ -215,9 +215,7 @@ function logClientError(payload) {
 function getDebugSnapshot() {
   const email = getActiveEmail();
   const props = PropertiesService.getScriptProperties();
-  _migrateRegistryIfNeeded(props);
-  const registry = _readRegistry(props);
-  _flushCorruptShardLogs();
+  const registry = _migrateAndReadRegistry(props);
   const myConns = registry
     .filter(function(c) { return c.userEmail === email; })
     .map(function(c) {
@@ -357,6 +355,7 @@ function enableUserTrigger() {
 // ==========================================
 const REGISTRY_SHARD_PREFIX = 'capture_conn_';
 const REGISTRY_BACKUP_KEY = 'capture_registry_backup_v1';
+const MAX_CONN_BYTES = 9000; // GAS per-property size cap; enforced in setupSpreadsheet, reported in getAdminDiagnostics
 
 // Corrupt shards found by _readRegistry are queued here rather than logged
 // inline, so a caller holding a lock never triggers logDiag's own internal
@@ -390,8 +389,8 @@ function _deleteConnectionShard(props, conn) {
 // skipped, not fatal (2A). Returns records sorted by (userEmail, tabName) so
 // the dashboard order is stable across reloads regardless of property
 // iteration order (D8).
-function _readRegistry(props) {
-  const all = props.getProperties();
+function _readRegistry(props, preFetchedAll) {
+  const all = preFetchedAll || props.getProperties();
   const shardEntries = [];
   Object.keys(all).forEach(function(key) {
     if (key.indexOf(REGISTRY_SHARD_PREFIX) === 0) {
@@ -435,6 +434,27 @@ function _flushCorruptShardLogs() {
   });
 }
 
+// Read-only entry points share this exact sequence: migrate, read, flush any
+// corrupt-shard logs (safe here since there's no lock held across the call).
+function _migrateAndReadRegistry(props) {
+  _migrateRegistryIfNeeded(props);
+  const registry = _readRegistry(props);
+  _flushCorruptShardLogs();
+  return registry;
+}
+
+// Mutating entry points share this exact gate: if migration couldn't get its
+// lock while the legacy blob still exists, the caller must not proceed
+// against a possibly-partial store (D4). Returns a ready-to-return error
+// object, or null when it's safe to continue.
+function _migrateOrRetryError(props) {
+  const migResult = _migrateRegistryIfNeeded(props);
+  if (!migResult.ok && migResult.lockFailed) {
+    return { success: false, error: 'Update in progress, please retry.' };
+  }
+  return null;
+}
+
 // One-time, explicit, pre-lock migration from the legacy single-blob registry
 // to per-connection shards. Callers invoke this BEFORE acquiring their own
 // lock (1A) — migration acquires and fully releases its own lock, so there is
@@ -456,6 +476,7 @@ function _migrateRegistryIfNeeded(props) {
   }
 
   let corruptBlob = false;
+  let backupWriteFailure = null;
   try {
     const raw = props.getProperty(REGISTRY_KEY);
     if (raw === null) return { ok: true }; // migrated by another execution while we waited for the lock
@@ -480,23 +501,47 @@ function _migrateRegistryIfNeeded(props) {
       }
     });
 
+    // Migrated-this-pass records are tracked separately from existingShards
+    // (a snapshot taken once, before this loop) so two blob records sharing
+    // the same identity triple — plausible residue from the pre-sharding
+    // hijack bug (commit 1e6fc9f) — collapse into a single shard instead of
+    // each independently missing the pre-loop snapshot and forking into two
+    // permanent shards for one logical connection.
+    const migratedThisPass = [];
     blobRecords.forEach(function(conn) {
       const hasShardMatch = existingShards.some(function(s) {
+        return _connMatches(s, conn.userEmail, conn.tabName, conn.spreadsheetUrl);
+      }) || migratedThisPass.some(function(s) {
         return _connMatches(s, conn.userEmail, conn.tabName, conn.spreadsheetUrl);
       });
       if (!hasShardMatch) {
         conn.id = Utilities.getUuid();
         props.setProperty(_connKey(conn), JSON.stringify(conn));
+        migratedThisPass.push(conn);
       }
-      // else: a live shard already covers this identity — merge-only means it wins.
+      // else: a live shard (or an earlier record in this same blob) already
+      // covers this identity — merge-only means it wins.
     });
 
-    props.setProperty(REGISTRY_BACKUP_KEY, raw);
+    // Best-effort forensic backup: shards are already written above, so a
+    // failure here (e.g. raw itself exceeds the 9KB property limit — the
+    // largest registries are exactly the ones this migration exists to help)
+    // must not block deleting the source key. Without this try/catch, the
+    // backup write throwing would leave capture_registry in place forever,
+    // and every future call would re-attempt migration and re-throw at the
+    // same line — a permanent migration failure loop for the accounts that
+    // most need to get off the single-blob format.
+    try {
+      props.setProperty(REGISTRY_BACKUP_KEY, raw);
+    } catch(e) {
+      backupWriteFailure = { errorClass: e.name, message: e.message };
+    }
     props.deleteProperty(REGISTRY_KEY);
     return { ok: true };
   } finally {
     lock.releaseLock();
     if (corruptBlob) logDiag('ERROR', '_migrateRegistryIfNeeded:corruptBlob', {});
+    if (backupWriteFailure) logDiag('WARN', '_migrateRegistryIfNeeded:backupWriteFailed', backupWriteFailure);
   }
 }
 
@@ -507,9 +552,7 @@ function getDashboardData() {
   try {
   const email = getActiveEmail();
   const props = PropertiesService.getScriptProperties();
-  _migrateRegistryIfNeeded(props);
-  let registry = _readRegistry(props);
-  _flushCorruptShardLogs();
+  let registry = _migrateAndReadRegistry(props);
   let connections = [];
 
   registry.forEach(conn => {
@@ -570,10 +613,8 @@ function togglePauseConnection(tabName, url) {
   try {
     const activeEmail = getActiveEmail();
     const props = PropertiesService.getScriptProperties();
-    const migResult = _migrateRegistryIfNeeded(props);
-    if (!migResult.ok && migResult.lockFailed) {
-      return { success: false, error: 'Update in progress, please retry.' };
-    }
+    const migRetry = _migrateOrRetryError(props);
+    if (migRetry) return migRetry;
     const lock = LockService.getScriptLock();
     if (!lock.tryLock(5000)) return { success: false, error: 'Could not acquire lock.' };
     try {
@@ -614,10 +655,8 @@ function deleteConnection(tabName, url) {
   try {
     const activeEmail = getActiveEmail();
     const props = PropertiesService.getScriptProperties();
-    const migResult = _migrateRegistryIfNeeded(props);
-    if (!migResult.ok && migResult.lockFailed) {
-      return { success: false, error: 'Update in progress, please retry.' };
-    }
+    const migRetry = _migrateOrRetryError(props);
+    if (migRetry) return migRetry;
     const lock = LockService.getScriptLock();
     if (!lock.tryLock(5000)) return { success: false, error: 'Could not acquire lock.' };
     try {
@@ -651,9 +690,7 @@ function repairConnection(tabName, url) {
   try {
     const activeEmail = getActiveEmail();
     const props = PropertiesService.getScriptProperties();
-    _migrateRegistryIfNeeded(props);
-    const registry = _readRegistry(props);
-    _flushCorruptShardLogs();
+    const registry = _migrateAndReadRegistry(props);
     const conn = registry.find(c => _connMatches(c, activeEmail, tabName, url));
     if (!conn) return { success: false, error: 'Connection not found in registry.' };
     if (!conn.headerConfigs) {
@@ -668,9 +705,7 @@ function repairConnection(tabName, url) {
 function getEditConfig(tabName, url) {
   const activeEmail = getActiveEmail();
   const props = PropertiesService.getScriptProperties();
-  _migrateRegistryIfNeeded(props);
-  const registry = _readRegistry(props);
-  _flushCorruptShardLogs();
+  const registry = _migrateAndReadRegistry(props);
   const conn = registry.find(c => _connMatches(c, activeEmail, tabName, url));
   if (!conn) {
     const reportId = logDiag('WARN', 'getEditConfig', { message: 'unauthorized access attempt', tabName: tabName, userEmail: activeEmail });
@@ -907,10 +942,8 @@ function setupSpreadsheet(labelName, tabName, targetUrl, headerConfigs, initialS
 
     const activeEmail = getActiveEmail();
     const props = PropertiesService.getScriptProperties();
-    const migResult = _migrateRegistryIfNeeded(props);
-    if (!migResult.ok && migResult.lockFailed) {
-      return { success: false, error: 'Update in progress, please retry.' };
-    }
+    const migRetry = _migrateOrRetryError(props);
+    if (migRetry) return migRetry;
 
     const ss = SpreadsheetApp.openByUrl(targetUrl);
 
@@ -1019,7 +1052,7 @@ function setupSpreadsheet(labelName, tabName, targetUrl, headerConfigs, initialS
       // cap from the whole registry to each connection: enforce it here
       // rather than let a wide-column capture rediscover the old silent
       // write failure at a new threshold.
-      if (JSON.stringify(conn).length >= 9000) {
+      if (JSON.stringify(conn).length >= MAX_CONN_BYTES) {
         return { success: false, error: 'This capture has too many columns/rules to save (limit ~9KB). Remove some columns.' };
       }
 
@@ -1326,9 +1359,7 @@ function processEmails() {
   const startTime = Date.now();
   const activeEmail = getActiveEmail();
   const props = PropertiesService.getScriptProperties();
-  _migrateRegistryIfNeeded(props);
-  const registry = _readRegistry(props);
-  _flushCorruptShardLogs();
+  const registry = _migrateAndReadRegistry(props);
   const syncResults = [];
 
   registry.forEach(conn => {
