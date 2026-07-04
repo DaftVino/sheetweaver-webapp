@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Loom — Ambient Thread Weave Mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@500;600;700&family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  /* ===== Token layer (subset copied from Index.html) ===== */
+  :root {
+    --bg-page: #0b3542;
+    --bg-glow: rgba(45, 200, 185, 0.18);
+    --bg-card: #ffffff;
+    --text-main: #253044;
+    --text-muted: #647084;
+    --primary: #0d7070;
+    --border: #d7dde6;
+    --shadow: rgba(13, 112, 112, 0.12);
+    --shadow-md: 0 2px 4px var(--shadow);
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-8: 32px;
+    --font-sm: 13px;
+    --font-base: 16px;
+    --font-2xl: 24px;
+
+    --thread: #2dd4bf;
+    --duration-base: 180ms;
+
+    /* Body dot grid (Solar). Matches Index.html:258 exactly. */
+    --dot-color: rgba(255,255,255,0.055);
+  }
+  body.theme-torres {
+    --bg-page: #0f172a;
+    --bg-glow: rgba(45, 212, 191, 0.12);
+    --bg-card: #212b3d;
+    --text-main: #f3f3f3;
+    --text-muted: #c7cfdd;
+    --primary: #38c4b4;
+    --border: #40506a;
+    --shadow: rgba(0, 0, 0, 0.38);
+    --thread: #5eead4;
+  }
+  body.theme-nes {
+    --bg-page: #2f3e57;
+    --bg-glow: rgba(185, 67, 47, 0.15);
+    --bg-card: #d8d5c8;
+    --text-main: #2f302d;
+    --text-muted: #625d55;
+    --primary: #7b5a3a;
+    --border: #9a8f7f;
+    --radius-md: 0;
+    --radius-lg: 2px;
+    --thread: #b9432f;
+  }
+
+  /* ===== Page frame (mirrors Index.html body) ===== */
+  body {
+    font-family: 'Inter', system-ui, Arial, sans-serif;
+    font-size: var(--font-base);
+    line-height: 1.5;
+    margin: 0;
+    padding: var(--space-5);
+    min-height: 100vh;
+    box-sizing: border-box;
+    background-color: var(--bg-page);
+    background-image:
+      radial-gradient(var(--dot-color) 1px, transparent 1px),
+      radial-gradient(ellipse 80% 55% at 50% -5%, var(--bg-glow) 0%, transparent 70%);
+    background-size: 24px 24px, 100% 100%;
+    color: var(--text-main);
+    transition: background-color var(--duration-base) ease, color var(--duration-base) ease;
+  }
+
+  /* =====================================================================
+     THE FEATURE UNDER DESIGN — ambient thread canvas.
+     Sits above the body dot grid, below the card (card is opaque, so
+     threads that end on dots behind the card are occluded — exactly the
+     "start visible, may end hidden behind the card" behavior).
+     ===================================================================== */
+  #threadCanvas {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ===== Dot-matrix glow wave (animated sweep) =====
+     A dimmer, second copy of the body dot grid, perfectly registered on it
+     (same 24px tiling => same dot centers). A brightness BAND expands from the
+     top-center (the light bloom's origin) down and out to the outer bottom,
+     then fades — a one-shot "the loom energizes" sweep when the screen opens.
+     JS drives the mask (an expanding elliptical ring) and opacity each frame;
+     `opacity` at the crest is the peak boost (0.5 ~= +50% over the 0.055 base).
+     Hidden (opacity 0) until played. */
+  #dotWave {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: -1;
+    background-image: radial-gradient(var(--dot-color) 1px, transparent 1px);
+    background-size: 24px 24px;
+    opacity: 0;
+    -webkit-mask-image: radial-gradient(ellipse 110% 130% at 50% -8%, #000 0%, transparent 40%);
+            mask-image: radial-gradient(ellipse 110% 130% at 50% -8%, #000 0%, transparent 40%);
+  }
+
+  /* ===== Fake app card (context stand-in for the real UI) ===== */
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 720px;
+    margin: 24vh auto 0;
+    background: var(--bg-card);
+    padding: var(--space-8);
+    border-radius: var(--radius-lg);
+    border: 1px solid rgba(255,255,255,0.07);
+    box-shadow: var(--shadow-md);
+    text-align: center;
+  }
+  .container h2 {
+    font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+    font-weight: 700;
+    font-size: var(--font-2xl);
+    margin: 0 0 var(--space-3);
+    color: var(--primary);
+  }
+  body.theme-nes .container h2 { font-family: 'Press Start 2P', monospace; font-size: 0.7em; line-height: 1.6; }
+  .container p { color: var(--text-muted); margin: 0; }
+
+  /* ===== Mockup control panel (not part of the feature) ===== */
+  #panel {
+    position: fixed;
+    right: 16px;
+    top: 16px;
+    z-index: 12000;
+    width: 320px;
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+    background: var(--bg-card);
+    color: var(--text-main);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    padding: var(--space-4);
+    font-size: var(--font-sm);
+  }
+  #panel.collapsed .panel-body { display: none; }
+  #panel h3 { margin: 0; font-size: 13px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none; }
+  #panel .panel-body { margin-top: var(--space-3); }
+  #panel .grp { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 8px; }
+  #panel .grp:first-child { border-top: 0; margin-top: 0; padding-top: 0; }
+  #panel .grp-label { color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 6px; }
+  #panel .row { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+  #panel .row label { flex: 0 0 118px; color: var(--text-muted); }
+  #panel .row input[type=range] { flex: 1; min-width: 0; }
+  #panel .row .val { flex: 0 0 46px; text-align: right; font-variant-numeric: tabular-nums; }
+  #panel .themes, #panel .actions { display: flex; gap: 6px; margin-bottom: 10px; }
+  #panel button {
+    flex: 1; padding: 7px 4px; border-radius: var(--radius-md);
+    border: 1px solid var(--border); background: transparent; color: var(--text-main);
+    font: inherit; cursor: pointer; min-height: 32px;
+  }
+  #panel button.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+  body.theme-torres #panel button.primary { color: #0b2030; }
+  #panel button[aria-pressed="true"] { background: var(--primary); color: #fff; border-color: var(--primary); }
+  body.theme-torres #panel button[aria-pressed="true"] { color: #0b2030; }
+  #panel .toggles { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; margin-top: 6px; }
+  #panel .toggles label { display: flex; gap: 6px; align-items: center; color: var(--text-muted); cursor: pointer; }
+  #panel .note { color: var(--text-muted); font-size: 11px; margin: 8px 0 0; }
+  #panel .stat { color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  #panel .dump { width: 100%; box-sizing: border-box; margin-top: 6px; font: 11px/1.4 monospace; height: 84px; resize: vertical; }
+
+  /* Debug: red overlay grid to confirm dot registration */
+  #gridDebug { position: fixed; inset: 0; pointer-events: none; z-index: 8999; display: none;
+    background-image: radial-gradient(rgba(255,80,80,0.5) 1.5px, transparent 1.5px);
+    background-size: 24px 24px; }
+  body.debug-grid #gridDebug { display: block; }
+</style>
+</head>
+<body>
+
+  <div id="dotWave"></div>
+  <canvas id="threadCanvas"></canvas>
+
+  <div class="container">
+    <h2>The Loom Is Strung</h2>
+    <p>Ambient threads stitch between the dots behind this card. This box stands in for the real app UI — threads that end on dots behind it are occluded, so they appear to weave into the interface.</p>
+  </div>
+
+  <div id="gridDebug"></div>
+
+  <div id="panel">
+    <h3 onclick="document.getElementById('panel').classList.toggle('collapsed')">
+      Loom — ambient thread controls <span>▾</span>
+    </h3>
+    <div class="panel-body">
+      <div class="themes">
+        <button data-theme="" aria-pressed="true">Solar</button>
+        <button data-theme="theme-torres">Torres</button>
+        <button data-theme="theme-nes">C64</button>
+      </div>
+      <div class="actions">
+        <button class="primary" id="waveBtn">🌊 Play wave</button>
+        <button id="spawnBtn">＋ Spawn</button>
+        <button id="pauseBtn" aria-pressed="false">⏸</button>
+        <button id="slowBtn" aria-pressed="false">🐢</button>
+      </div>
+
+      <div class="grp">
+        <p class="grp-label">Dot-glow wave (plays on open)</p>
+        <div class="row"><label for="cWaveGlow">Peak glow α</label><input type="range" id="cWaveGlow" min="0" max="0.9" step="0.02" value="0.3"><span class="val" id="vWaveGlow"></span></div>
+        <div class="row"><label for="cWaveDot">Dot size</label><input type="range" id="cWaveDot" min="1" max="6" step="0.25" value="1"><span class="val" id="vWaveDot"></span></div>
+        <div class="row"><label for="cWaveDur">Sweep time</label><input type="range" id="cWaveDur" min="600" max="6000" step="100" value="1400"><span class="val" id="vWaveDur"></span></div>
+        <div class="row"><label for="cWaveBand">Band width</label><input type="range" id="cWaveBand" min="10" max="160" step="5" value="15"><span class="val" id="vWaveBand"></span></div>
+        <div class="row"><label for="cWaveReach">Reach</label><input type="range" id="cWaveReach" min="80" max="340" step="5" value="115"><span class="val" id="vWaveReach"></span></div>
+        <label class="note" style="display:flex;gap:6px;align-items:center;"><input type="checkbox" id="cWaveHold"> Stay lit after sweep</label>
+      </div>
+
+      <div class="grp">
+        <p class="grp-label">Look &amp; subtlety</p>
+        <div class="row"><label for="cOpacity">Max opacity</label><input type="range" id="cOpacity" min="0.1" max="1" step="0.05" value="0.5"><span class="val" id="vOpacity"></span></div>
+        <div class="row"><label for="cWidth">Stroke width</label><input type="range" id="cWidth" min="0.5" max="4" step="0.25" value="1"><span class="val" id="vWidth"></span></div>
+      </div>
+
+      <div class="grp">
+        <p class="grp-label">Path shape (rolled per thread)</p>
+        <div class="row"><label for="cAmpMin">Amp min</label><input type="range" id="cAmpMin" min="2" max="28" step="1" value="5"><span class="val" id="vAmpMin"></span></div>
+        <div class="row"><label for="cAmpMax">Amp max</label><input type="range" id="cAmpMax" min="2" max="28" step="1" value="15"><span class="val" id="vAmpMax"></span></div>
+        <div class="row"><label for="cLongAmpMin">Long × min</label><input type="range" id="cLongAmpMin" min="1" max="3" step="0.1" value="1.5"><span class="val" id="vLongAmpMin"></span></div>
+        <div class="row"><label for="cLongAmpMax">Long × max</label><input type="range" id="cLongAmpMax" min="1" max="3" step="0.1" value="2"><span class="val" id="vLongAmpMax"></span></div>
+        <div class="row"><label for="cWavesMin">S curves min</label><input type="range" id="cWavesMin" min="1" max="4" step="1" value="1"><span class="val" id="vWavesMin"></span></div>
+        <div class="row"><label for="cWavesMax">S curves max</label><input type="range" id="cWavesMax" min="1" max="4" step="1" value="3"><span class="val" id="vWavesMax"></span></div>
+      </div>
+
+      <div class="grp">
+        <p class="grp-label">Node participation (dots light up)</p>
+        <div class="row"><label for="cTaper">End taper</label><input type="range" id="cTaper" min="0.1" max="1" step="0.05" value="0.15"><span class="val" id="vTaper"></span></div>
+        <div class="row"><label for="cPulse">Node pulse</label><input type="range" id="cPulse" min="0" max="1" step="0.05" value="0.75"><span class="val" id="vPulse"></span></div>
+        <div class="row"><label for="cNodeR">Node size</label><input type="range" id="cNodeR" min="1" max="5" step="0.5" value="1"><span class="val" id="vNodeR"></span></div>
+        <div class="row"><label for="cPulseMs">Pulse decay</label><input type="range" id="cPulseMs" min="150" max="2000" step="50" value="750"><span class="val" id="vPulseMs"></span></div>
+      </div>
+
+      <div class="grp">
+        <p class="grp-label">Timing (draw rolled per thread)</p>
+        <div class="row"><label for="cDrawMin">Draw min</label><input type="range" id="cDrawMin" min="600" max="6000" step="100" value="2000"><span class="val" id="vDrawMin"></span></div>
+        <div class="row"><label for="cDrawMax">Draw max</label><input type="range" id="cDrawMax" min="600" max="6000" step="100" value="3000"><span class="val" id="vDrawMax"></span></div>
+        <div class="row"><label for="cHold">Hold time</label><input type="range" id="cHold" min="0" max="15000" step="100" value="10000"><span class="val" id="vHold"></span></div>
+        <div class="row"><label for="cFade">Fade time</label><input type="range" id="cFade" min="300" max="4000" step="100" value="1500"><span class="val" id="vFade"></span></div>
+      </div>
+
+      <div class="grp">
+        <p class="grp-label">Spawning &amp; chance</p>
+        <div class="row"><label for="cMin">Gap min</label><input type="range" id="cMin" min="0.25" max="20" step="0.25" value="0.5"><span class="val" id="vMin"></span></div>
+        <div class="row"><label for="cMax">Gap max</label><input type="range" id="cMax" min="0.5" max="60" step="0.25" value="10"><span class="val" id="vMax"></span></div>
+        <div class="row"><label for="cBias">Long-gap bias</label><input type="range" id="cBias" min="0" max="4" step="0.25" value="0.25"><span class="val" id="vBias"></span></div>
+        <div class="row"><label for="cConc">Max on screen</label><input type="range" id="cConc" min="1" max="12" step="1" value="5"><span class="val" id="vConc"></span></div>
+        <p class="stat" id="density"></p>
+      </div>
+
+      <div class="grp">
+        <p class="grp-label">Distance (in dots)</p>
+        <div class="row"><label for="cLongPct">Long chance</label><input type="range" id="cLongPct" min="0" max="100" step="5" value="65"><span class="val" id="vLongPct"></span></div>
+        <div class="row"><label for="cShortMin">Short min</label><input type="range" id="cShortMin" min="1" max="10" step="1" value="3"><span class="val" id="vShortMin"></span></div>
+        <div class="row"><label for="cShortMax">Short max</label><input type="range" id="cShortMax" min="1" max="16" step="1" value="12"><span class="val" id="vShortMax"></span></div>
+        <div class="row"><label for="cLongMin">Long min</label><input type="range" id="cLongMin" min="6" max="24" step="1" value="15"><span class="val" id="vLongMin"></span></div>
+        <div class="row"><label for="cLongMax">Long max</label><input type="range" id="cLongMax" min="10" max="30" step="1" value="30"><span class="val" id="vLongMax"></span></div>
+      </div>
+
+      <div class="grp">
+        <div class="toggles">
+          <label><input type="checkbox" id="cGridDbg"> Show grid</label>
+          <label><input type="checkbox" id="cStartAvoid"> Force start off-card</label>
+          <label><input type="checkbox" id="cSimReduced"> Simulate reduced-motion (static)</label>
+          <label><input type="checkbox" id="cSelfTest"> Canvas self-test</label>
+        </div>
+        <p class="stat" id="stat"></p>
+        <p class="note" id="rmNote" style="display:none;color:#c9822f;">Heads up: your OS has reduced-motion ON. The <em>real</em> feature would render nothing here (static). This mockup previews the motion anyway so you can judge the design — tick "Simulate reduced-motion" to see the true static behavior.</p>
+        <p class="note">Pauses spawning when the tab is hidden (finishes in-flight threads). Fully static under OS reduced-motion in production. Values below get frozen into the spec once you lock the look.</p>
+        <textarea class="dump" id="dump" readonly></textarea>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ---------- tunables (become the spec's fixed values once locked) ---------- */
+  var P = {
+    maxOpacity: 0.5, strokeWidth: 1, taperEnd: 0.15, nodePulse: 0.75, nodeRadius: 1, pulseDecayMs: 750,
+    ampMin: 5, ampMax: 15, longAmpMin: 1.5, longAmpMax: 2, wavesMin: 1, wavesMax: 3,
+    drawMsMin: 2000, drawMsMax: 3000, holdMs: 10000, fadeMs: 1500,
+    gapMin: 0.5, gapMax: 10, bias: 0.25, concurrency: 5,
+    longPct: 65, shortMin: 3, shortMax: 12, longMin: 15, longMax: 30,
+    startAvoid: false, slow: 1
+  };
+  var PITCH = 24, OFF = 12; // body grid: dot centers at (12 + 24i, 12 + 24j)
+
+  var canvas = document.getElementById('threadCanvas');
+  var ctx = canvas.getContext('2d');
+  var vw = 0, vh = 0, dpr = 1, threadColor = '#2dd4bf', isNes = false;
+  var threads = [], spawnTimer = null, rafId = null, paused = false;
+  var reduced = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  var simReduced = false; // mockup-only: force the static path to test it
+  var selfTest = false, frameCount = 0; // mockup-only: prove the canvas paints
+  var clock = 0, lastTs = 0; // animation clock: only advances while actually painting
+  // (so throttled/hidden pauses don't fast-forward and expire every thread)
+  // In production this is just `reduced`. In the mockup we preview anyway unless
+  // the user explicitly asks to see the static path.
+  function motionOK() { return !simReduced; }
+
+  function resize() {
+    vw = window.innerWidth; vh = window.innerHeight;
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = vw * dpr; canvas.height = vh * dpr;
+    canvas.style.width = vw + 'px'; canvas.style.height = vh + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function readTheme() {
+    isNes = document.body.classList.contains('theme-nes');
+    threadColor = getComputedStyle(document.body).getPropertyValue('--thread').trim() || '#2dd4bf';
+  }
+
+  function cardRect() {
+    var el = document.querySelector('.container');
+    if (!el) return null;
+    var r = el.getBoundingClientRect();
+    var pad = 14; // keep the thread's birth clearly off the card edge
+    return { l: r.left - pad, t: r.top - pad, r: r.right + pad, b: r.bottom + pad };
+  }
+  function inRect(x, y, rc) { return rc && x >= rc.l && x <= rc.r && y >= rc.t && y <= rc.b; }
+
+  function rand(a, b) { return a + Math.random() * (b - a); }
+  function randInt(a, b) { return Math.floor(rand(a, b + 1)); }
+
+  /* ---------- build one thread between two dots, with an S-curve body ---------- */
+  function makeThread() {
+    var rc = cardRect();
+    var sx, sy, ex, ey, isLong, tries = 0, sOn, eOn;
+    do {
+      // start: any visible dot in the viewport (may sit behind the card)
+      var si = randInt(0, Math.floor((vw - OFF) / PITCH));
+      var sj = randInt(0, Math.floor((vh - OFF) / PITCH));
+      sx = OFF + si * PITCH; sy = OFF + sj * PITCH;
+      // distance category: long ~longPct% of the time, short otherwise
+      isLong = Math.random() * 100 < P.longPct;
+      var dist = isLong ? randInt(Math.min(P.longMin, P.longMax), Math.max(P.longMin, P.longMax))
+                        : randInt(Math.max(1, Math.min(P.shortMin, P.shortMax)), Math.max(P.shortMin, P.shortMax));
+      // angle → integer dot offsets so the end lands exactly on a dot
+      var ang = rand(0, Math.PI * 2);
+      var di = Math.round(dist * Math.cos(ang)), dj = Math.round(dist * Math.sin(ang));
+      if (di === 0 && dj === 0) di = dist; // never zero-length
+      ex = sx + di * PITCH; ey = sy + dj * PITCH;
+      tries++;
+      sOn = inRect(sx, sy, rc); eOn = inRect(ex, ey, rc);
+      // Reject: (a) if startAvoid, the birth must be off the card; (b) always, a
+      // thread must never be fully hidden — if it starts behind the card it must
+      // end off the card (off-card or off-screen), else no stroke is ever seen.
+    } while (((P.startAvoid && sOn) || (sOn && eOn)) && tries < 80);
+
+    var dx = ex - sx, dy = ey - sy;
+    var lineLen = Math.hypot(dx, dy) || 1;
+    var nx = -dy / lineLen, ny = dx / lineLen; // unit perpendicular
+    // roll shape params fresh for this thread (min/max ranges, order-safe)
+    var waves = randInt(Math.min(P.wavesMin, P.wavesMax), Math.max(P.wavesMin, P.wavesMax));
+    var longMult = isLong ? rand(Math.min(P.longAmpMin, P.longAmpMax), Math.max(P.longAmpMin, P.longAmpMax)) : 1;
+    var amp = rand(Math.min(P.ampMin, P.ampMax), Math.max(P.ampMin, P.ampMax)) * longMult;
+    amp = Math.min(amp, lineLen * 0.3); // keep tiny threads from whipping
+
+    // sample the path: straight line + sin displacement (0 at both dot ends)
+    var N = Math.max(20, Math.round(lineLen / 4));
+    var pts = new Array(N + 1);
+    for (var k = 0; k <= N; k++) {
+      var t = k / N;
+      var bx = sx + dx * t, by = sy + dy * t;
+      var disp = amp * Math.sin(t * Math.PI * waves);
+      pts[k] = { x: bx + nx * disp, y: by + ny * disp };
+    }
+    return {
+      pts: pts, start: pts[0], end: pts[N],
+      t0: clock, holdMs: P.holdMs, fadeMs: P.fadeMs,
+      drawMs: rand(Math.min(P.drawMsMin, P.drawMsMax), Math.max(P.drawMsMin, P.drawMsMax))
+    };
+  }
+
+  /* ---------- render loop ---------- */
+  function drawThread(th) {
+    var e = (clock - th.t0) / P.slow;
+    var total = th.drawMs + th.holdMs + th.fadeMs;
+    if (e >= total) return false;
+
+    var head, alpha;
+    if (e < th.drawMs) { head = e / th.drawMs; alpha = P.maxOpacity; }
+    else if (e < th.drawMs + th.holdMs) { head = 1; alpha = P.maxOpacity; }
+    else { head = 1; alpha = P.maxOpacity * (1 - (e - th.drawMs - th.holdMs) / th.fadeMs); }
+
+    var pts = th.pts, N = pts.length - 1, last = N * head, li = Math.floor(last), frac = last - li;
+    var fade = alpha / P.maxOpacity; // 1 during draw/hold, ->0 during fade
+
+    ctx.strokeStyle = threadColor;
+    ctx.fillStyle = threadColor;
+    ctx.lineJoin = isNes ? 'miter' : 'round';
+    ctx.lineCap = isNes ? 'butt' : 'round';
+    ctx.globalAlpha = alpha;
+
+    // Stroke segment-by-segment with a width that tapers toward each dot
+    // (thread under tension: full-width mid-span, thin at the nodes).
+    for (var k = 0; k < li; k++) {
+      ctx.lineWidth = segW((k + 0.5) / N);
+      ctx.beginPath(); ctx.moveTo(pts[k].x, pts[k].y); ctx.lineTo(pts[k + 1].x, pts[k + 1].y); ctx.stroke();
+    }
+    if (li < N && frac > 0) {
+      ctx.lineWidth = segW((li + 0.5) / N);
+      ctx.beginPath(); ctx.moveTo(pts[li].x, pts[li].y);
+      ctx.lineTo(pts[li].x + (pts[li + 1].x - pts[li].x) * frac, pts[li].y + (pts[li + 1].y - pts[li].y) * frac);
+      ctx.stroke();
+    }
+
+    // The dots of the loom light up as a thread plugs into them: the start node
+    // pulses at birth, the end node pulses on arrival; both settle to a faint
+    // sustain and fade out with the thread.
+    node(th.start.x, th.start.y, e, fade);
+    if (head >= 1) node(th.end.x, th.end.y, e - th.drawMs, fade);
+    return true;
+  }
+  function segW(t) { return P.strokeWidth * (P.taperEnd + (1 - P.taperEnd) * Math.sin(Math.PI * t)); }
+  function node(x, y, since, fade) {
+    if (since < 0) return;
+    var a = Math.min(1, 0.1 + P.nodePulse * Math.exp(-since / P.pulseDecayMs)) * fade;
+    if (a <= 0.01) return;
+    ctx.globalAlpha = a;
+    var r = P.nodeRadius;
+    ctx.beginPath();
+    if (isNes) ctx.rect(x - r, y - r, r * 2, r * 2); else ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function frame(now) {
+    // advance the clock by a clamped delta so throttle/hidden gaps don't
+    // fast-forward the animation (which used to expire every thread at once)
+    if (!lastTs) lastTs = now;
+    var dt = now - lastTs; lastTs = now;
+    if (dt < 0 || dt > 100) dt = 16;
+    clock += dt;
+
+    ctx.clearRect(0, 0, vw, vh);
+    if (selfTest) {
+      ctx.save();
+      ctx.globalAlpha = 1; ctx.strokeStyle = threadColor; ctx.fillStyle = threadColor; ctx.lineWidth = 3;
+      ctx.strokeRect(24, 24, vw - 48, vh - 48);
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(vw, vh); ctx.stroke();
+      ctx.beginPath(); ctx.arc(vw / 2, vh / 2, 30, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+    for (var i = threads.length - 1; i >= 0; i--) {
+      if (!drawThread(threads[i])) threads.splice(i, 1);
+    }
+    frameCount++;
+    document.getElementById('stat').textContent =
+      'live:' + threads.length + '/' + P.concurrency + '  frames:' + frameCount +
+      '  vw:' + vw + ' vh:' + vh + ' dpr:' + dpr + (paused ? '  (paused)' : '');
+    rafId = requestAnimationFrame(frame);
+  }
+
+  /* ---------- spawn scheduler: weighted gap, favors longer waits ---------- */
+  function nextGapMs() {
+    var lo = Math.min(P.gapMin, P.gapMax), hi = Math.max(P.gapMin, P.gapMax);
+    var r = Math.pow(Math.random(), 1 / (1 + P.bias)); // bias>0 skews toward 1 (longer gaps)
+    return (lo + (hi - lo) * r) * 1000;
+  }
+  function scheduleNext() {
+    clearTimeout(spawnTimer);
+    spawnTimer = setTimeout(tick, nextGapMs() / P.slow);
+  }
+  function tick() {
+    if (!paused && !document.hidden && threads.length < P.concurrency) {
+      try { threads.push(makeThread()); } catch (e) { console.error('[threads]', e); }
+    }
+    scheduleNext();
+  }
+
+  /* ---------- lifecycle ---------- */
+  document.addEventListener('visibilitychange', function () {
+    // Pause spawning when hidden; in-flight threads finish on their own.
+    if (!document.hidden && !paused && motionOK()) scheduleNext();
+  });
+  window.addEventListener('resize', function () { resize(); });
+
+  function restart() {
+    clearTimeout(spawnTimer);
+    threads = [];
+    if (!motionOK()) { ctx && ctx.clearRect(0, 0, vw, vh); document.getElementById('stat').textContent = 'reduced-motion: static, no threads'; return; }
+    threads.push(makeThread()); // one immediately so the page is never empty
+    scheduleNext();
+  }
+
+  function start() {
+    resize(); readTheme();
+    if (reduced) document.getElementById('rmNote').style.display = '';
+    rafId = requestAnimationFrame(frame); // loop always runs; it just draws nothing when empty
+    restart();
+    playWave(); // the dot-glow wave sweeps once as the screen opens
+  }
+
+  /* ---------- panel wiring ---------- */
+  function dumpValues() {
+    document.getElementById('dump').value = JSON.stringify(P, null, 0)
+      .replace(/,"/g, ',\n"').replace(/^\{/, '{\n').replace(/\}$/, '\n}');
+    updEstimate();
+  }
+  // Predicted average threads on screen = lifetime / avg-gap, capped at concurrency.
+  // Teaches the relationship so density isn't guesswork.
+  function updEstimate() {
+    var life = (P.drawMsMin + P.drawMsMax) / 2 + P.holdMs + P.fadeMs;
+    var lo = Math.min(P.gapMin, P.gapMax), hi = Math.max(P.gapMin, P.gapMax);
+    var eR = (1 + P.bias) / (2 + P.bias);        // expected value of the biased 0..1 roll
+    var gap = (lo + (hi - lo) * eR) * 1000;
+    var raw = life / gap, est = Math.min(P.concurrency, raw);
+    var limit = raw >= P.concurrency ? 'cap-limited' : 'gap-limited (lower the gap to reach the cap)';
+    document.getElementById('density').textContent =
+      '≈ ' + est.toFixed(1) + ' on screen avg  ·  ' + limit;
+  }
+  function bind(id, valId, key, fmt) {
+    var el = document.getElementById(id), out = document.getElementById(valId);
+    function upd() { P[key] = +el.value; out.textContent = fmt(el.value); dumpValues(); }
+    el.addEventListener('input', upd); upd();
+  }
+  bind('cOpacity', 'vOpacity', 'maxOpacity', function (v) { return (+v).toFixed(2); });
+  bind('cWidth', 'vWidth', 'strokeWidth', function (v) { return v + 'px'; });
+  bind('cTaper', 'vTaper', 'taperEnd', function (v) { return (+v).toFixed(2); });
+  bind('cPulse', 'vPulse', 'nodePulse', function (v) { return (+v).toFixed(2); });
+  bind('cNodeR', 'vNodeR', 'nodeRadius', function (v) { return v + 'px'; });
+  bind('cPulseMs', 'vPulseMs', 'pulseDecayMs', function (v) { return v + 'ms'; });
+  bind('cAmpMin', 'vAmpMin', 'ampMin', function (v) { return v + 'px'; });
+  bind('cAmpMax', 'vAmpMax', 'ampMax', function (v) { return v + 'px'; });
+  bind('cLongAmpMin', 'vLongAmpMin', 'longAmpMin', function (v) { return (+v).toFixed(1) + '×'; });
+  bind('cLongAmpMax', 'vLongAmpMax', 'longAmpMax', function (v) { return (+v).toFixed(1) + '×'; });
+  bind('cWavesMin', 'vWavesMin', 'wavesMin', function (v) { return v; });
+  bind('cWavesMax', 'vWavesMax', 'wavesMax', function (v) { return v; });
+  bind('cDrawMin', 'vDrawMin', 'drawMsMin', function (v) { return v + 'ms'; });
+  bind('cDrawMax', 'vDrawMax', 'drawMsMax', function (v) { return v + 'ms'; });
+  bind('cHold', 'vHold', 'holdMs', function (v) { return v + 'ms'; });
+  bind('cFade', 'vFade', 'fadeMs', function (v) { return v + 'ms'; });
+  bind('cMin', 'vMin', 'gapMin', function (v) { return v + 's'; });
+  bind('cMax', 'vMax', 'gapMax', function (v) { return v + 's'; });
+  bind('cBias', 'vBias', 'bias', function (v) { return (+v).toFixed(2); });
+  bind('cConc', 'vConc', 'concurrency', function (v) { return v; });
+  bind('cLongPct', 'vLongPct', 'longPct', function (v) { return v + '%'; });
+  bind('cShortMin', 'vShortMin', 'shortMin', function (v) { return v; });
+  bind('cShortMax', 'vShortMax', 'shortMax', function (v) { return v; });
+  bind('cLongMin', 'vLongMin', 'longMin', function (v) { return v; });
+  bind('cLongMax', 'vLongMax', 'longMax', function (v) { return v; });
+
+  // Dot-glow wave: a brightness band expands from the top-center out past the
+  // bottom, then fades — a one-shot "the loom energizes" sweep that plays when
+  // the screen opens. rAF-driven; not part of the thread engine.
+  var dotWave = document.getElementById('dotWave'), waveRAF = null;
+  function waveVals() {
+    var g = +document.getElementById('cWaveGlow').value, r = +document.getElementById('cWaveDot').value,
+        d = +document.getElementById('cWaveDur').value, b = +document.getElementById('cWaveBand').value,
+        h = +document.getElementById('cWaveReach').value;
+    document.getElementById('vWaveGlow').textContent = g.toFixed(2);
+    document.getElementById('vWaveDot').textContent = r + 'px';
+    document.getElementById('vWaveDur').textContent = d + 'ms';
+    document.getElementById('vWaveBand').textContent = b + '%';
+    document.getElementById('vWaveReach').textContent = h + '%';
+    // Peak brightness lives in the dots' own alpha (up to ~16× the 0.055 base),
+    // so the wave can be as bold as you want; element opacity only carries the fade.
+    dotWave.style.backgroundImage = 'radial-gradient(rgba(255,255,255,' + g + ') ' + r + 'px, transparent ' + r + 'px)';
+    return { d: d, b: b, h: h, hold: document.getElementById('cWaveHold').checked };
+  }
+  function bandMask(crest, band, h) {
+    var lo = Math.max(0, crest - band);
+    var m = 'radial-gradient(ellipse 110% ' + h + '% at 50% -8%, transparent ' + lo.toFixed(1) +
+            '%, #000 ' + crest.toFixed(1) + '%, transparent ' + (crest + band).toFixed(1) + '%)';
+    dotWave.style.webkitMaskImage = m; dotWave.style.maskImage = m;
+  }
+  function playWave() {
+    cancelAnimationFrame(waveRAF);
+    var v = waveVals(), t0 = performance.now(), travel = 100 + v.b; // crest exits past the edge
+    function step(now) {
+      var p = (now - t0) / (v.d * P.slow);
+      if (p >= 1) {
+        if (v.hold) {         // settle into a steady top-down glow
+          var sm = 'radial-gradient(ellipse 110% ' + v.h + '% at 50% -8%, #000 0%, #000 14%, transparent 78%)';
+          dotWave.style.webkitMaskImage = sm; dotWave.style.maskImage = sm;
+          dotWave.style.opacity = 1;
+        } else { dotWave.style.opacity = 0; }
+        return;
+      }
+      dotWave.style.opacity = (p < 0.8 ? 1 : (1 - (p - 0.8) / 0.2)); // brightness is in the alpha; opacity just fades the tail
+      bandMask(p * travel, v.b, v.h);
+      waveRAF = requestAnimationFrame(step);
+    }
+    waveRAF = requestAnimationFrame(step);
+  }
+  ['cWaveGlow', 'cWaveDot', 'cWaveDur', 'cWaveBand', 'cWaveReach'].forEach(function (id) {
+    document.getElementById(id).addEventListener('input', waveVals);
+  });
+  document.getElementById('waveBtn').addEventListener('click', playWave);
+  waveVals();
+
+  document.getElementById('cGridDbg').addEventListener('change', function () { document.body.classList.toggle('debug-grid', this.checked); });
+  document.getElementById('cStartAvoid').addEventListener('change', function () { P.startAvoid = this.checked; });
+  document.getElementById('cSimReduced').addEventListener('change', function () { simReduced = this.checked; restart(); });
+  document.getElementById('cSelfTest').addEventListener('change', function () { selfTest = this.checked; });
+
+  document.getElementById('spawnBtn').addEventListener('click', function () {
+    if (!motionOK()) return;
+    threads.push(makeThread()); // force one now (ignores the concurrency cap so it's unmistakable)
+  });
+  document.getElementById('pauseBtn').addEventListener('click', function () {
+    paused = !paused;
+    this.setAttribute('aria-pressed', paused ? 'true' : 'false');
+    this.textContent = paused ? '▶ Resume' : '⏸ Pause';
+    if (!paused) scheduleNext();
+  });
+  document.getElementById('slowBtn').addEventListener('click', function () {
+    P.slow = P.slow === 1 ? 3 : 1;
+    this.setAttribute('aria-pressed', P.slow === 3 ? 'true' : 'false');
+  });
+
+  document.querySelectorAll('#panel .themes button').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      document.body.className = btn.dataset.theme + (document.getElementById('cGridDbg').checked ? ' debug-grid' : '');
+      document.querySelectorAll('#panel .themes button').forEach(function (b) { b.setAttribute('aria-pressed', 'false'); });
+      btn.setAttribute('aria-pressed', 'true');
+      readTheme();
+    });
+  });
+
+  dumpValues();
+  setTimeout(start, 200);
+})();
+</script>
+</body>
+</html>

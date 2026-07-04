@@ -1458,6 +1458,39 @@ function checkWeaveTeardownSplit(htmlSrc) {
     !!doubleFireGuardRegion && /_weaveClearStaleDom\s*\(\s*\)/.test(doubleFireGuardRegion[0]) && !/[^_]_weaveTeardown\s*\(\s*\)/.test(doubleFireGuardRegion[0]));
 }
 
+// Loom E (ambient thread weave) + Loom F (dot-glow wave): static invariants.
+// No DOM/canvas harness exists (GAS webapp, manual QA), so verify the load-bearing
+// contracts the eng + design reviews locked: both background layers sit behind the
+// card (z-index -1), both are prefers-reduced-motion guarded, Loom E's lifecycle is
+// idempotent, and Loom F's sweep is wired to the dashboard (step-0) trigger.
+function checkLoomEF(htmlSrc, scripts) {
+  check('Loom E: Index.html has the #threadCanvas element',
+    /<canvas[^>]*id="threadCanvas"/.test(htmlSrc));
+  check('Loom F: Index.html has the #dotWave element',
+    /id="dotWave"/.test(htmlSrc));
+
+  const canvasCss = htmlSrc.match(/#threadCanvas\s*\{[^}]*\}/);
+  const dotWaveCss = htmlSrc.match(/#dotWave\s*\{[^}]*\}/);
+  check('Loom E: #threadCanvas sits behind the card (z-index -1)',
+    !!canvasCss && /z-index:\s*-1/.test(canvasCss[0]));
+  check('Loom F: #dotWave sits behind the card (z-index -1)',
+    !!dotWaveCss && /z-index:\s*-1/.test(dotWaveCss[0]));
+
+  const eBody = scripts.find(s => s.includes('makeThread') && s.includes("getElementById('threadCanvas')")) || '';
+  check('Loom E: engine block present', eBody.length > 0);
+  check('Loom E: guards prefers-reduced-motion', /prefers-reduced-motion[^)]*reduce/.test(eBody));
+  check('Loom E: defines idempotent teardown() and start()',
+    /function teardown\s*\(/.test(eBody) && /function start\s*\(/.test(eBody));
+  check('Loom E: uses a canvas 2D context', /getContext\(\s*['"]2d['"]\s*\)/.test(eBody));
+
+  const fBody = scripts.find(s => s.includes('window._dotWavePlay')) || '';
+  check('Loom F: engine block present', fBody.length > 0);
+  check('Loom F: guards prefers-reduced-motion', /prefers-reduced-motion[^)]*reduce/.test(fBody));
+  check('Loom F: exposes _dotWavePlay', /window\._dotWavePlay\s*=/.test(fBody));
+  check('Loom F: sweep is triggered from nextStep(0)',
+    /stepNumber === 0[\s\S]{0,120}_dotWavePlay/.test(htmlSrc));
+}
+
 const requiredFiles = [
   'Code.js',
   'Index.html',
@@ -1511,6 +1544,7 @@ inlineScripts.forEach((script, index) => {
 });
 checkPhase4Helpers(htmlSource);
 checkWeaveTeardownSplit(htmlSource);
+checkLoomEF(htmlSource, inlineScripts);
 checkLocalStorageConvention(htmlSource);
 
 // Phase 4 (branding): branding presence checks

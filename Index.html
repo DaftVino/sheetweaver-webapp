@@ -297,6 +297,19 @@
       body.theme-nes #weaveOverlay line.merged { stroke-linecap: square; }
       #weaveDots { position: fixed; inset: 0; pointer-events: none; z-index: -1; background-image: radial-gradient(rgba(255,255,255,0.055) 1.5px, transparent 1.5px); background-size: 24px 24px; opacity: 0; }
       #weaveCar { position: fixed; left: 0; top: 0; pointer-events: none; z-index: 9000; font-size: 22px; line-height: 1; }
+
+      /* Loom E: ambient thread-weave background (all pages). Above the body dot
+         grid, below the card (z-index -1, same layer as #weaveDots). */
+      #threadCanvas { position: fixed; inset: 0; pointer-events: none; z-index: -1; }
+      /* Loom F: dot-glow wave that sweeps once when the dashboard (step-0) opens.
+         A dimmer second copy of the dot grid, masked to an expanding ellipse.
+         Brightness lives in the dot alpha; opacity carries only the tail fade.
+         Hidden until played; JS overrides background/mask/opacity during the sweep. */
+      #dotWave { position: fixed; inset: 0; pointer-events: none; z-index: -1;
+        background-image: radial-gradient(rgba(255,255,255,0.3) 1px, transparent 1px);
+        background-size: 24px 24px; opacity: 0;
+        -webkit-mask-image: radial-gradient(ellipse 110% 115% at 50% -8%, #000 0%, transparent 40%);
+                mask-image: radial-gradient(ellipse 110% 115% at 50% -8%, #000 0%, transparent 40%); }
       .container {
         max-width: 1050px;
         margin: 0 auto;
@@ -651,6 +664,8 @@
     </style>
   </head>
   <body>
+    <div id="dotWave"></div>
+    <canvas id="threadCanvas" aria-hidden="true"></canvas>
     <div class="container">
       <div id="deleteModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="deleteModalTitle">
         <div class="modal-content">
@@ -893,8 +908,8 @@
       </div>
 
       <div id="step-3" class="step">
-        <h3 id="successTitle" style="color: var(--success-text);">The Loom Is Strung!</h3>
-        <p>Your configuration rules have been saved successfully.</p>
+        <h3 id="successTitle" style="color: var(--success-text); text-align: center;">The Loom Is Strung!</h3>
+        <p style="text-align: center;">Your configuration rules have been saved successfully.</p>
         
         <div class="info-box neutral-box">
           <strong>⏱️ Weave Schedule:</strong> Please note that your data will not populate in the spreadsheet immediately. The loom weaves on a 15-minute cycle. The woven data should appear in the spreadsheet by <strong><span id="syncTimeEstimate">...</span></strong>.
@@ -1789,6 +1804,9 @@
 
         document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
         document.getElementById('step-' + stepNumber).classList.add('active');
+
+        // Loom F: the dot-glow wave sweeps once each time the dashboard opens.
+        if (stepNumber === 0 && typeof _dotWavePlay === 'function') _dotWavePlay();
 
         document.querySelectorAll('.landing-only').forEach(el => {
           if (stepNumber !== 0) {
@@ -2815,6 +2833,250 @@
         ta.focus();
         ta.select();
       }
+    </script>
+
+    <script>
+    /* =====================================================================
+       Loom F — dot-glow wave. A brighter band of dots sweeps once from the
+       top-center out past the bottom (mirroring the light bloom's ellipse),
+       then fades. Plays when the dashboard (step-0) opens. Pure mask/opacity,
+       no layout. Skipped entirely under prefers-reduced-motion.
+       spec: issues/loom-f-dot-glow-wave.md
+       ===================================================================== */
+    (function () {
+      'use strict';
+      var W = { peakGlow: 0.3, dotSize: 1, sweepMs: 1400, bandWidth: 15, reach: 115 };
+      var el = document.getElementById('dotWave');
+      if (!el) return;
+      var raf = null, running = false;
+      var mq = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+      function reduced() { return mq ? mq.matches : false; }
+      function mask(crest) {
+        var lo = Math.max(0, crest - W.bandWidth);
+        var m = 'radial-gradient(ellipse 110% ' + W.reach + '% at 50% -8%, transparent ' + lo.toFixed(1) +
+                '%, #000 ' + crest.toFixed(1) + '%, transparent ' + (crest + W.bandWidth).toFixed(1) + '%)';
+        el.style.webkitMaskImage = m; el.style.maskImage = m;
+      }
+      function play() {
+        if (reduced() || running) return;              // debounce: no overlapping sweeps
+        running = true;
+        el.style.backgroundImage = 'radial-gradient(rgba(255,255,255,' + W.peakGlow + ') ' +
+          W.dotSize + 'px, transparent ' + W.dotSize + 'px)';
+        var t0 = performance.now(), travel = 100 + W.bandWidth;
+        function step(now) {
+          var p = (now - t0) / W.sweepMs;
+          if (p >= 1) { el.style.opacity = 0; running = false; raf = null; return; }
+          el.style.opacity = (p < 0.8 ? 1 : (1 - (p - 0.8) / 0.2)); // brightness is in the alpha; opacity just fades the tail
+          mask(p * travel);
+          raf = requestAnimationFrame(step);
+        }
+        raf = requestAnimationFrame(step);
+      }
+      if (mq) (mq.addEventListener ? mq.addEventListener.bind(mq, 'change') : mq.addListener.bind(mq))(function () {
+        if (reduced() && raf) { cancelAnimationFrame(raf); raf = null; running = false; el.style.opacity = 0; }
+      });
+      window._dotWavePlay = play;
+      try { play(); } catch (e) {}                     // initial load: step-0 is the active step
+    })();
+    </script>
+
+    <script>
+    /* =====================================================================
+       Loom E — ambient thread weave. Faint wavy threads draw between two grid
+       dots, hold, then fade, continuously on every screen. The dots light up
+       as threads plug in; the stroke tapers toward each dot. Canvas draw only,
+       no layout. rAF is GATED (runs only while a thread is drawing/fading, or
+       its node pulse is still settling; sleeps through the static hold middle
+       and idle gaps). Skipped entirely under prefers-reduced-motion.
+
+       Lifecycle (idempotent teardown()/start(); every input routes through them):
+                          reduced-motion OFF / init
+                 OFF ───────────────────────────────▶ IDLE
+                  ▲                                     │ spawn / thread enters fade
+                  │ reduced ON → teardown()             ▼
+                  └──────────────────────────── ANIMATING (rAF running)
+         tab hidden : stop spawning; threads finish; loop sleeps when done.
+         tab visible: resume spawning.  resize: re-measure, no teardown.
+       spec: issues/loom-e-ambient-thread-weave.md
+       ===================================================================== */
+    (function () {
+      'use strict';
+      var E = {
+        maxOpacity: 0.5, strokeWidth: 1, taperEnd: 0.15, nodePulse: 0.75, nodeRadius: 1, pulseDecayMs: 750,
+        ampMin: 5, ampMax: 15, longAmpMin: 1.5, longAmpMax: 2, wavesMin: 1, wavesMax: 3,
+        drawMsMin: 2000, drawMsMax: 3000, holdMs: 10000, fadeMs: 1500,
+        gapMin: 0.5, gapMax: 10, bias: 0.25, concurrency: 5,
+        longPct: 65, shortMin: 3, shortMax: 12, longMin: 15, longMax: 30
+      };
+      var PITCH = 24, OFF = 12, PULSE_TAIL = 3300; // ms of hold during which a node pulse is still visibly settling
+      var canvas = document.getElementById('threadCanvas');
+      if (!canvas) return;
+      var ctx = canvas.getContext('2d');
+      var vw = 0, vh = 0, dpr = 1, threadColor = '#2dd4bf', isNes = false;
+      var threads = [], spawnTimer = null, wakeTimer = null, rafId = null, running = false;
+      var mq = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+      function reduced() { return mq ? mq.matches : false; }
+
+      function rand(a, b) { return a + Math.random() * (b - a); }
+      function randInt(a, b) { return Math.floor(rand(a, b + 1)); }
+
+      function resize() {
+        vw = window.innerWidth; vh = window.innerHeight;
+        dpr = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = vw * dpr; canvas.height = vh * dpr;
+        canvas.style.width = vw + 'px'; canvas.style.height = vh + 'px';
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+      function readTheme() {
+        isNes = document.body.classList.contains('theme-nes');
+        threadColor = getComputedStyle(document.body).getPropertyValue('--thread').trim() || '#2dd4bf';
+      }
+      function cardRect() {
+        var c = document.querySelector('.container');
+        if (!c) return null;
+        var r = c.getBoundingClientRect();
+        return { l: r.left - 14, t: r.top - 14, r: r.right + 14, b: r.bottom + 14 };
+      }
+      function inRect(x, y, rc) { return rc && x >= rc.l && x <= rc.r && y >= rc.t && y <= rc.b; }
+
+      function makeThread() {
+        var rc = cardRect(), sx, sy, ex, ey, isLong, sOn, eOn, tries = 0;
+        do {
+          var si = randInt(0, Math.floor((vw - OFF) / PITCH)), sj = randInt(0, Math.floor((vh - OFF) / PITCH));
+          sx = OFF + si * PITCH; sy = OFF + sj * PITCH;
+          isLong = Math.random() * 100 < E.longPct;
+          var dist = isLong ? randInt(E.longMin, E.longMax) : randInt(E.shortMin, E.shortMax);
+          var ang = rand(0, Math.PI * 2), di = Math.round(dist * Math.cos(ang)), dj = Math.round(dist * Math.sin(ang));
+          if (di === 0 && dj === 0) di = dist;
+          ex = sx + di * PITCH; ey = sy + dj * PITCH;
+          sOn = inRect(sx, sy, rc); eOn = inRect(ex, ey, rc);
+          tries++;
+        } while (sOn && eOn && tries < 80); // never fully hidden behind the card
+
+        var dx = ex - sx, dy = ey - sy, lineLen = Math.hypot(dx, dy) || 1;
+        var nx = -dy / lineLen, ny = dx / lineLen;
+        var waves = randInt(E.wavesMin, E.wavesMax);
+        var amp = rand(E.ampMin, E.ampMax) * (isLong ? rand(E.longAmpMin, E.longAmpMax) : 1);
+        amp = Math.min(amp, lineLen * 0.3);
+        var N = Math.max(20, Math.round(lineLen / 4)), pts = new Array(N + 1);
+        for (var k = 0; k <= N; k++) {
+          var t = k / N, disp = amp * Math.sin(t * Math.PI * waves);
+          pts[k] = { x: sx + dx * t + nx * disp, y: sy + dy * t + ny * disp };
+        }
+        return { pts: pts, start: pts[0], end: pts[N], born: performance.now(),
+                 drawMs: rand(E.drawMsMin, E.drawMsMax), holdMs: E.holdMs, fadeMs: E.fadeMs };
+      }
+
+      function segW(t) { return E.strokeWidth * (E.taperEnd + (1 - E.taperEnd) * Math.sin(Math.PI * t)); }
+      function node(x, y, since, fade) {
+        if (since < 0) return;
+        var a = Math.min(1, 0.1 + E.nodePulse * Math.exp(-since / E.pulseDecayMs)) * fade;
+        if (a <= 0.01) return;
+        ctx.globalAlpha = a;
+        ctx.beginPath();
+        if (isNes) ctx.rect(x - E.nodeRadius, y - E.nodeRadius, E.nodeRadius * 2, E.nodeRadius * 2);
+        else ctx.arc(x, y, E.nodeRadius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      function drawThread(th, now) {
+        var e = now - th.born, total = th.drawMs + th.holdMs + th.fadeMs;
+        if (e >= total) return false;
+        var head, alpha;
+        if (e < th.drawMs) { head = e / th.drawMs; alpha = E.maxOpacity; }
+        else if (e < th.drawMs + th.holdMs) { head = 1; alpha = E.maxOpacity; }
+        else { head = 1; alpha = E.maxOpacity * (1 - (e - th.drawMs - th.holdMs) / th.fadeMs); }
+        var pts = th.pts, Nn = pts.length - 1, last = Nn * head, li = Math.floor(last), frac = last - li;
+        var fade = alpha / E.maxOpacity;
+        ctx.strokeStyle = threadColor; ctx.fillStyle = threadColor;
+        ctx.lineJoin = isNes ? 'miter' : 'round'; ctx.lineCap = isNes ? 'butt' : 'round';
+        ctx.globalAlpha = alpha;
+        for (var k = 0; k < li; k++) {
+          ctx.lineWidth = segW((k + 0.5) / Nn);
+          ctx.beginPath(); ctx.moveTo(pts[k].x, pts[k].y); ctx.lineTo(pts[k + 1].x, pts[k + 1].y); ctx.stroke();
+        }
+        if (li < Nn && frac > 0) {
+          ctx.lineWidth = segW((li + 0.5) / Nn);
+          ctx.beginPath(); ctx.moveTo(pts[li].x, pts[li].y);
+          ctx.lineTo(pts[li].x + (pts[li + 1].x - pts[li].x) * frac, pts[li].y + (pts[li + 1].y - pts[li].y) * frac);
+          ctx.stroke();
+        }
+        node(th.start.x, th.start.y, e, fade);
+        if (head >= 1) node(th.end.x, th.end.y, e - th.drawMs, fade);
+        return true;
+      }
+
+      // A thread needs frames during draw + the node-pulse settle, and during fade;
+      // the static middle of the hold needs none (that is where the loop sleeps).
+      function needsFrame(th, now) {
+        var e = now - th.born;
+        return e < th.drawMs + PULSE_TAIL ||
+               (e >= th.drawMs + th.holdMs && e < th.drawMs + th.holdMs + th.fadeMs);
+      }
+      function nextWakeDelay(now) {
+        var best = Infinity;
+        for (var i = 0; i < threads.length; i++) {
+          var fadeStart = threads[i].born + threads[i].drawMs + threads[i].holdMs;
+          if (fadeStart > now && fadeStart - now < best) best = fadeStart - now;
+        }
+        return best;
+      }
+      function frame() {
+        var now = performance.now();
+        readTheme();                    // pick up live theme switches
+        ctx.clearRect(0, 0, vw, vh);
+        var active = false;
+        for (var i = threads.length - 1; i >= 0; i--) {
+          if (!drawThread(threads[i], now)) { threads.splice(i, 1); continue; }
+          if (needsFrame(threads[i], now)) active = true;
+        }
+        if (active) { rafId = requestAnimationFrame(frame); return; }
+        rafId = null; running = false;  // nothing changing — sleep, wake at the next fade
+        var d = nextWakeDelay(now);
+        if (d !== Infinity) { clearTimeout(wakeTimer); wakeTimer = setTimeout(wake, d + 16); }
+      }
+      function wake() {
+        if (running || reduced()) return;
+        running = true;
+        rafId = requestAnimationFrame(frame);
+      }
+
+      function scheduleSpawn() {
+        clearTimeout(spawnTimer);
+        var lo = Math.min(E.gapMin, E.gapMax), hi = Math.max(E.gapMin, E.gapMax);
+        var r = Math.pow(Math.random(), 1 / (1 + E.bias)); // biased toward longer gaps
+        spawnTimer = setTimeout(spawnTick, (lo + (hi - lo) * r) * 1000);
+      }
+      function spawnTick() {
+        if (!document.hidden && !reduced() && threads.length < E.concurrency) {
+          try { threads.push(makeThread()); wake(); } catch (e) {}
+        }
+        if (!document.hidden && !reduced()) scheduleSpawn();
+      }
+
+      function teardown() {
+        if (rafId) cancelAnimationFrame(rafId);
+        clearTimeout(spawnTimer); clearTimeout(wakeTimer);
+        rafId = null; spawnTimer = null; wakeTimer = null; running = false;
+        threads = [];
+        if (ctx) ctx.clearRect(0, 0, vw, vh);
+      }
+      function start() {
+        if (running || reduced()) return;
+        resize(); readTheme();
+        try { threads.push(makeThread()); } catch (e) {}
+        wake(); scheduleSpawn();
+      }
+
+      window.addEventListener('resize', function () { resize(); wake(); });
+      document.addEventListener('visibilitychange', function () {
+        if (document.hidden) clearTimeout(spawnTimer);
+        else if (!reduced()) scheduleSpawn();
+      });
+      if (mq) (mq.addEventListener ? mq.addEventListener.bind(mq, 'change') : mq.addListener.bind(mq))(function () {
+        if (reduced()) teardown(); else start();
+      });
+      try { start(); } catch (e) {}
+    })();
     </script>
   </body>
 </html>
