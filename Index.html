@@ -254,12 +254,25 @@
         line-height: var(--leading-normal);
         padding: var(--space-5);
         background-color: var(--bg-page);
+        color: var(--text-main);
+        transition: background-color var(--duration-base) ease, color var(--duration-base) ease;
+      }
+
+      /* Loom backdrop: the dot-matrix grid + light bloom as a fixed, full-viewport
+         layer, so the background always covers 100% of the screen on load (no
+         content-height breaks / repeats) and registers exactly with the fixed
+         thread + wave layers above it. z-index -2 keeps it behind those (-1). */
+      #loomBackdrop {
+        position: fixed;
+        inset: 0;
+        z-index: -2;
+        pointer-events: none;
+        background-color: var(--bg-page);
         background-image:
           radial-gradient(rgba(255,255,255,0.055) 1px, transparent 1px),
           radial-gradient(ellipse 80% 55% at 50% -5%, var(--bg-glow) 0%, transparent 70%);
         background-size: 24px 24px, 100% 100%;
-        color: var(--text-main);
-        transition: background-color var(--duration-base) ease, color var(--duration-base) ease;
+        transition: background-color var(--duration-base) ease;
       }
 
       /* Visible keyboard focus for all interactive elements */
@@ -664,6 +677,7 @@
     </style>
   </head>
   <body>
+    <div id="loomBackdrop"></div>
     <div id="dotWave"></div>
     <canvas id="threadCanvas" aria-hidden="true"></canvas>
     <div class="container">
@@ -2950,8 +2964,9 @@
           if (di === 0 && dj === 0) di = dist;
           ex = sx + di * PITCH; ey = sy + dj * PITCH;
           sOn = inRect(sx, sy, rc); eOn = inRect(ex, ey, rc);
+          var eOff = ex < 0 || ex > vw || ey < 0 || ey > vh; // end past the display edge
           tries++;
-        } while (sOn && eOn && tries < 80); // never fully hidden behind the card
+        } while (((sOn && eOn) || eOff) && tries < 80); // never fully hidden behind the card, and never dead-end at a screen edge
 
         var dx = ex - sx, dy = ey - sy, lineLen = Math.hypot(dx, dy) || 1;
         var nx = -dy / lineLen, ny = dx / lineLen;

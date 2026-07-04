@@ -26,7 +26,7 @@ below are the portable core. Visual quality is the primary acceptance bar.
 
 ## Current State (verified 2026-07-03)
 
-- **Dot grid**: `Index.html:257-260`, body `background-image` `radial-gradient(rgba(255,255,255,0.055) 1px, transparent 1px)`, `background-size: 24px 24px`. Dot centers at `(12 + 24i, 12 + 24j)`. Hardcoded white for all themes (not tokenized) — unchanged by this feature.
+- **Dot grid**: now painted by a fixed, full-viewport `#loomBackdrop` layer (`z-index: -2`) instead of the body background, so it always covers 100% of the screen and registers exactly with the fixed thread/wave layers. `radial-gradient(rgba(255,255,255,0.055) 1px, transparent 1px)`, `background-size: 24px 24px`, dot centers at `(12 + 24i, 12 + 24j)` from the viewport top-left. Hardcoded white for all themes (not tokenized).
 - **Reduced-motion**: `Index.html:279-284` is a global CSS sledgehammer (`*` → `transition/animation-duration: 0.01ms !important`). It neutralizes CSS motion but does **not** stop a JS `requestAnimationFrame` loop, so this feature needs its own explicit `matchMedia` guard.
 - **z-index hierarchy** (must not break): `#statusToast` 11000 > `#debugCopiedToast` 10500 > `_showFallback` 9999 > Loom C `#weaveOverlay` 9000. Loom C's `#weaveDots` sits at `-1` (behind the card, above the body background) — this feature layers the same way.
 - **Themes**: body class (`theme-torres`, `theme-nes`); thread color `var(--thread)` (Solar `#2dd4bf`, Torres `#5eead4`, C64 `#b9432f`), from Loom A.
@@ -90,7 +90,7 @@ Mirror this diagram as an ASCII comment above the engine IIFE in `Index.html`.
 - `PITCH = 24`, `OFF = 12`. Start dot = a uniformly random dot within the viewport: `(OFF + i·PITCH, OFF + j·PITCH)`.
 - Distance class: **long with probability `longPct` (65%)**, else short. `dist` = random integer in the class's `[min,max]` dot range.
 - Angle = uniform `[0, 2π)`; end dot offset `di = round(dist·cos θ)`, `dj = round(dist·sin θ)` (so the end lands exactly on a dot); if both 0, force `di = dist`. End = `(sx + di·PITCH, sy + dj·PITCH)` — may be off-screen or behind the card.
-- **Start/exit rule** (`startAvoid = false`): a thread may start anywhere, **including behind the card**, but must never be fully hidden. Reject and re-roll (up to 80 tries) when **both** endpoints fall inside the card rect (its `getBoundingClientRect()` + 14px pad). (The legacy `startAvoid = true` path — reject any on-card *start* — remains in the mockup as a toggle but is **off** in the shipped config.)
+- **Start/exit rule** (`startAvoid = false`): a thread may start anywhere on-screen, **including behind the card**, but must never be fully hidden and must never dead-end at a display edge. Reject and re-roll (up to 80 tries) when **either** (a) both endpoints fall inside the card rect (`getBoundingClientRect()` + 14px pad), or (b) the **end** dot falls outside the viewport (`ex<0 || ex>vw || ey<0 || ey>vh`). Ends may still sit behind the card (which is on-screen, so the thread reads as weaving into the UI), but a thread never runs off the display edge and stops there. (The legacy `startAvoid = true` path — reject any on-card *start* — remains in the mockup as a toggle but is **off** in the shipped config.)
 - Path = the straight line start→end plus a perpendicular sine displacement `amp · sin(t · π · waves)`, `t ∈ [0,1]`. The sine is **0 at both `t=0` and `t=1`**, so the path begins and ends exactly on the two dots for any integer `waves`. `waves` rolled per thread in `[wavesMin, wavesMax]`. `amp = rand(ampMin, ampMax) · (isLong ? rand(longAmpMin, longAmpMax) : 1)`, then capped at `0.3 · lineLength` so short threads don't whip. Path sampled at `max(20, round(lineLength/4))` points.
 
 ### Per-thread rolls (all ranges rolled fresh at birth)
@@ -188,11 +188,11 @@ mockup's current defaults and remain tunable there before final lock.
 3. With OS reduced-motion enabled: no canvas node exists and no threads render (static background, byte-for-byte today's behavior). Toggling reduced-motion on at runtime tears the effect down; toggling off starts it.
 4. Steady-state density averages ~2-3 threads and never exceeds `concurrency` (5) at any instant; verify the cap holds under the fastest gap.
 5. ~65% of threads are long (15-30 dots) sweeping arcs; the rest are short (3-12 dots). Long threads visibly carry larger amplitude (up to the `0.3·length` cap).
-6. No thread is ever fully hidden: a thread whose start dot is behind the card always ends off the card (off-card or off-screen), so a visible stroke segment exists. Threads that *end* behind the card are cleanly occluded by the card (no stroke bleeds over the card).
+6. No thread is ever fully hidden, and no thread dead-ends at a display edge: both endpoints stay within the viewport, and a start dot behind the card always ends on a *visible* (off-card) dot. Threads that *end* behind the card are cleanly occluded by the card (no stroke bleeds over it). No thread's end sits on or past the screen border.
 7. Backgrounding the tab and returning does not produce a burst of instantly-expired threads or a visible time-jump; in-flight threads resume smoothly (clamped clock verified). While hidden, no new threads spawn and the loop idles once drained.
 8. No dropped-frame jank on a mid-range phone (Moto G-class or 4× CPU-throttled devtools) at `concurrency = 5`; canvas-draw-only verified (no layout thrash in a performance trace).
 9. z-index stays at `-1`: the app card and every toast/overlay/`_showFallback` render above the threads; a thread never draws over interactive UI.
-10. Renders correctly at 360px width: canvas fills the viewport, threads scale, no horizontal scrollbar, off-screen ends clip cleanly.
+10. Renders correctly at 360px width: canvas fills the viewport, threads scale, no horizontal scrollbar; endpoints stay on-screen (on a viewport too small to fit a long thread, the 80-try fallback may accept one that exits — acceptable degradation, not the common case).
 11. Removing the feature's CSS/JS/canvas block restores today's static background exactly (additive isolation).
 12. Safari private mode: no errors (feature touches no storage).
 13. **rAF idles when nothing animates**: in a devtools performance trace, CPU/rAF activity drops to ~0 during a thread's hold phase and during zero-thread gaps; it wakes only for draw/fade. No continuous 60fps.

@@ -361,10 +361,12 @@
       ex = sx + di * PITCH; ey = sy + dj * PITCH;
       tries++;
       sOn = inRect(sx, sy, rc); eOn = inRect(ex, ey, rc);
+      var eOff = ex < 0 || ex > vw || ey < 0 || ey > vh; // end past the display edge
       // Reject: (a) if startAvoid, the birth must be off the card; (b) always, a
       // thread must never be fully hidden — if it starts behind the card it must
-      // end off the card (off-card or off-screen), else no stroke is ever seen.
-    } while (((P.startAvoid && sOn) || (sOn && eOn)) && tries < 80);
+      // end off the card; (c) the end must stay on-screen so a thread never
+      // dead-ends at a display edge (ends may still sit behind the card).
+    } while (((P.startAvoid && sOn) || (sOn && eOn) || eOff) && tries < 80);
 
     var dx = ex - sx, dy = ey - sy;
     var lineLen = Math.hypot(dx, dy) || 1;

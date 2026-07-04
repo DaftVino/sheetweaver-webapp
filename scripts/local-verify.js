@@ -1489,6 +1489,20 @@ function checkLoomEF(htmlSrc, scripts) {
   check('Loom F: exposes _dotWavePlay', /window\._dotWavePlay\s*=/.test(fBody));
   check('Loom F: sweep is triggered from nextStep(0)',
     /stepNumber === 0[\s\S]{0,120}_dotWavePlay/.test(htmlSrc));
+
+  // Backdrop: the dot grid + bloom render as a fixed full-viewport layer so the
+  // background always covers 100% of the screen on load (no content-height breaks)
+  // and registers with the fixed thread/wave layers.
+  check('Loom backdrop: Index.html has the #loomBackdrop element',
+    /id="loomBackdrop"/.test(htmlSrc));
+  const backdropCss = htmlSrc.match(/#loomBackdrop\s*\{[^}]*\}/);
+  check('Loom backdrop: #loomBackdrop is fixed, full-viewport, z-index -2',
+    !!backdropCss && /position:\s*fixed/.test(backdropCss[0]) &&
+    /inset:\s*0/.test(backdropCss[0]) && /z-index:\s*-2/.test(backdropCss[0]) &&
+    /radial-gradient/.test(backdropCss[0]));
+  const bodyCss = htmlSrc.match(/\n\s*body\s*\{[^}]*\}/);
+  check('Loom backdrop: <body> no longer paints the dot grid (moved to #loomBackdrop)',
+    !!bodyCss && !/background-image/.test(bodyCss[0]));
 }
 
 const requiredFiles = [

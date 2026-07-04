@@ -24,7 +24,7 @@ They share the dot grid and coexist.
 
 ## Current State (verified 2026-07-03)
 
-- **Dot grid**: `Index.html:257-260`, body `background-image` `radial-gradient(rgba(255,255,255,0.055) 1px, transparent 1px)`, `background-size: 24px 24px`, dot centers at `(12 + 24i, 12 + 24j)`. Hardcoded white for all themes.
+- **Dot grid**: painted by a fixed, full-viewport `#loomBackdrop` layer (`z-index: -2`), `radial-gradient(rgba(255,255,255,0.055) 1px, transparent 1px)`, `background-size: 24px 24px`, dot centers at `(12 + 24i, 12 + 24j)` from the viewport top-left. Hardcoded white for all themes. (`#dotWave` registers exactly on it.)
 - **Light bloom**: the second body gradient, `radial-gradient(ellipse 80% 55% at 50% -5%, var(--bg-glow) 0%, transparent 70%)` — top-center origin. This feature mirrors that origin/shape, extended further down.
 - **Reduced-motion**: global CSS sledgehammer at `Index.html:279-284` neutralizes CSS motion but not JS rAF; this feature needs its own `matchMedia` guard.
 - **Main screen**: step-0 (dashboard). Wizard steps 1-3 are separate `.step` blocks.
