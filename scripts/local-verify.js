@@ -1482,6 +1482,10 @@ function checkLoomEF(htmlSrc, scripts) {
   check('Loom E: defines idempotent teardown() and start()',
     /function teardown\s*\(/.test(eBody) && /function start\s*\(/.test(eBody));
   check('Loom E: uses a canvas 2D context', /getContext\(\s*['"]2d['"]\s*\)/.test(eBody));
+  check('Loom E: has the clamped animation clock (AC7) — tick() clamps >100ms deltas',
+    /function tick\s*\(/.test(eBody) && /d > 100 \? 16 : d/.test(eBody));
+  check('Loom E: draw-phase head progress is eased (smoothstep)',
+    /function ease\s*\(/.test(eBody) && /head = ease\(e \/ th\.drawMs\)/.test(eBody));
 
   const fBody = scripts.find(s => s.includes('window._dotWavePlay')) || '';
   check('Loom F: engine block present', fBody.length > 0);
@@ -1515,7 +1519,7 @@ function makeLoomSandbox(opts) {
   const S = {
     now: 1000,
     rafCount: 0, rafCbs: [], cancelled: [],
-    timeoutCount: 0, clearedTimeouts: [],
+    timeoutCount: 0, timers: [], clearedTimeouts: [],
     winListeners: {}, docListeners: {}, mqListeners: [],
     clearRectCalls: 0,
     dotWaveEl: { style: {} },
@@ -1550,7 +1554,7 @@ function makeLoomSandbox(opts) {
     performance: { now: () => S.now },
     requestAnimationFrame: function (cb) { S.rafCount++; S.rafCbs.push(cb); return S.rafCount; },
     cancelAnimationFrame: function (id) { S.cancelled.push(id); },
-    setTimeout: function (fn, ms) { S.timeoutCount++; return S.timeoutCount; },
+    setTimeout: function (fn, ms) { S.timeoutCount++; S.timers.push({ id: S.timeoutCount, fn: fn, ms: ms }); return S.timeoutCount; },
     clearTimeout: function (id) { if (id) S.clearedTimeouts.push(id); }
   };
   sandbox.window = {
@@ -1689,6 +1693,49 @@ function checkLoomEFBehavior(scripts) {
       t.S.timeoutCount === timeoutsAfterStart);
   } catch (e) {
     failures.push('Loom E vm teardown/start idempotency: ' + e.message);
+  }
+
+  // Clamped animation clock (AC7): a giant rAF delta (background-tab throttle)
+  // credits ~16ms of thread time, so the in-flight thread is still drawing —
+  // it keeps requesting frames instead of expiring and going to sleep.
+  try {
+    const t = makeLoomSandbox({});
+    vm.runInContext(eBody, t.ctx);              // thread born at clock 0, rAF pending
+    const rafBefore = t.S.rafCount;
+    t.S.now = 1000 + 60000;                     // tab was hidden for a minute
+    t.S.rafCbs[t.S.rafCbs.length - 1]();
+    check('Loom E vm: clamped clock — a 60s rAF gap credits ~16ms, in-flight thread survives and keeps animating (AC7)',
+      t.S.rafCount > rafBefore);
+  } catch (e) {
+    failures.push('Loom E vm clamped clock: ' + e.message);
+  }
+
+  // Hold/idle sleep-wake: drive frames until the loop sleeps (thread in its
+  // static hold), then fire the wake timer — it must credit exactly the
+  // scheduled interval so the thread lands in its fade phase and re-arms rAF.
+  try {
+    const t = makeLoomSandbox({});
+    vm.runInContext(eBody, t.ctx);
+    let guard = 0;
+    while (guard++ < 300) {                     // ≤100ms deltas credit fully
+      const before = t.S.rafCount;
+      t.S.now += 100;
+      t.S.rafCbs[t.S.rafCbs.length - 1]();
+      if (t.S.rafCount === before) break;       // frame didn't re-arm — loop is asleep
+    }
+    check('Loom E vm: gated rAF sleeps during the static hold (frame stops re-arming)', guard < 300);
+    const wakeTimer = t.S.timers[t.S.timers.length - 1]; // scheduled by the sleeping frame
+    const rafBeforeWake = t.S.rafCount;
+    t.S.now += wakeTimer.ms + 50000;            // timer fired late (hidden-tab throttle)
+    wakeTimer.fn();
+    check('Loom E vm: wake timer re-arms the loop', t.S.rafCount === rafBeforeWake + 1);
+    const rafBeforeFade = t.S.rafCount;
+    t.S.now += 16;
+    t.S.rafCbs[t.S.rafCbs.length - 1]();
+    check('Loom E vm: wake credits exactly the scheduled sleep — thread lands in its fade and keeps animating (AC7)',
+      t.S.rafCount > rafBeforeFade);
+  } catch (e) {
+    failures.push('Loom E vm sleep-wake credit: ' + e.message);
   }
 
   try {

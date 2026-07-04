@@ -2932,8 +2932,23 @@
       var mq = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
       function reduced() { return mq ? mq.matches : false; }
 
+      // Clamped animation clock (AC7): all thread timing reads this clock, never
+      // wall time. rAF deltas over 100ms (background-tab throttle) credit only
+      // ~16ms, so returning to a hidden tab resumes in-flight threads smoothly
+      // instead of instantly expiring them. The intentional hold/idle sleep
+      // credits exactly its scheduled interval in wakeAfter().
+      var clock = 0, lastWall = null;
+      function tick() {
+        var w = performance.now();
+        if (lastWall === null) lastWall = w;
+        var d = w - lastWall; lastWall = w;
+        clock += (d > 100 ? 16 : d);
+        return clock;
+      }
+
       function rand(a, b) { return a + Math.random() * (b - a); }
       function randInt(a, b) { return Math.floor(rand(a, b + 1)); }
+      function ease(t) { return t * t * (3 - 2 * t); } // smoothstep — draw-phase easing
 
       function resize() {
         vw = window.innerWidth; vh = window.innerHeight;
@@ -2979,7 +2994,7 @@
           var t = k / N, disp = amp * Math.sin(t * Math.PI * waves);
           pts[k] = { x: sx + dx * t + nx * disp, y: sy + dy * t + ny * disp };
         }
-        return { pts: pts, start: pts[0], end: pts[N], born: performance.now(),
+        return { pts: pts, start: pts[0], end: pts[N], born: tick(),
                  drawMs: rand(E.drawMsMin, E.drawMsMax), holdMs: E.holdMs, fadeMs: E.fadeMs };
       }
 
@@ -2998,7 +3013,7 @@
         var e = now - th.born, total = th.drawMs + th.holdMs + th.fadeMs;
         if (e >= total) return false;
         var head, alpha;
-        if (e < th.drawMs) { head = e / th.drawMs; alpha = E.maxOpacity; }
+        if (e < th.drawMs) { head = ease(e / th.drawMs); alpha = E.maxOpacity; }
         else if (e < th.drawMs + th.holdMs) { head = 1; alpha = E.maxOpacity; }
         else { head = 1; alpha = E.maxOpacity * (1 - (e - th.drawMs - th.holdMs) / th.fadeMs); }
         var pts = th.pts, Nn = pts.length - 1, last = Nn * head, li = Math.floor(last), frac = last - li;
@@ -3037,7 +3052,7 @@
         return best;
       }
       function frame() {
-        var now = performance.now();
+        var now = tick();
         readTheme();                    // pick up live theme switches
         ctx.clearRect(0, 0, vw, vh);
         var active = false;
@@ -3048,12 +3063,19 @@
         if (active) { rafId = requestAnimationFrame(frame); return; }
         rafId = null; running = false;  // nothing changing — sleep, wake at the next fade
         var d = nextWakeDelay(now);
-        if (d !== Infinity) { clearTimeout(wakeTimer); wakeTimer = setTimeout(wake, d + 16); }
+        if (d !== Infinity) { clearTimeout(wakeTimer); wakeTimer = setTimeout(function () { wakeAfter(d + 16); }, d + 16); }
       }
       function wake() {
         if (running || reduced()) return;
         running = true;
         rafId = requestAnimationFrame(frame);
+      }
+      function wakeAfter(credited) {
+        // Intentional hold/idle sleep: credit exactly the scheduled interval,
+        // never the (possibly throttled) wall time that actually passed, then
+        // resync the wall baseline — anti-fast-forward on hidden tabs (AC7).
+        clock += credited; lastWall = performance.now();
+        wake();
       }
 
       function scheduleSpawn() {
@@ -3073,7 +3095,7 @@
         if (rafId) cancelAnimationFrame(rafId);
         clearTimeout(spawnTimer); clearTimeout(wakeTimer);
         rafId = null; spawnTimer = null; wakeTimer = null; running = false;
-        threads = [];
+        threads = []; lastWall = null; // restart never credits time slept while torn down
         if (ctx) ctx.clearRect(0, 0, vw, vh);
       }
       function start() {
