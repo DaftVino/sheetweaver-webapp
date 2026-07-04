@@ -85,6 +85,7 @@ Users enter their own Sheet URL during setup by default. Admins can optionally s
 ├── scripts/
 │   └── local-verify.js  # Local gate — run before every push
 ├── docs/
+│   ├── ARCHITECTURE.md          # How frontend, backend, and storage fit together
 │   ├── setup-guide.md           # Full install and update instructions
 │   ├── first-time-user-flow.md  # End-user walkthrough (linked from the in-app Help menu)
 │   ├── troubleshooting.md
@@ -102,7 +103,7 @@ Users enter their own Sheet URL during setup by default. Admins can optionally s
 4. Save — the app registers the thread and automatically starts your 15-minute weave trigger.
 5. Emails arriving under the label are processed automatically every 15 minutes.
 
-First-time visitors see a dismissible welcome tip on the dashboard. The header shows the running app version (e.g. `v2.2.0`) and a **Help** menu linking to the Troubleshooting Guide, Setup Guide, [First-Time User Guide](docs/first-time-user-flow.md), Changelog, and a Report-a-Bug shortcut. Below the threads table, a status line shows the countdown to the next weave and a lifetime rows-woven count.
+First-time visitors see a dismissible welcome tip on the dashboard. The header shows the running app version (e.g. `v2.4.0`) and a **Help** menu linking to the Troubleshooting Guide, Setup Guide, [First-Time User Guide](docs/first-time-user-flow.md), Changelog, and a Report-a-Bug shortcut. Below the threads table, a status line shows the countdown to the next weave and a lifetime rows-woven count.
 
 ## Themes
 
@@ -115,6 +116,8 @@ The UI ships with three CSS themes selectable per-user:
 | `nes` | Retro Commodore 64 palette |
 
 Theme choice is persisted per-user via `PropertiesService`.
+
+All themes share a subtle ambient background: faint threads continuously weave between dots of the background grid, and arriving at the dashboard from the wizard plays a one-time dot-glow wave. Both animations are decorative — they never intercept clicks and are disabled automatically when the OS "reduce motion" setting is on.
 
 ## Known Limitations
 
