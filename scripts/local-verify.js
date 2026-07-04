@@ -1505,6 +1505,210 @@ function checkLoomEF(htmlSrc, scripts) {
     !!bodyCss && !/background-image/.test(bodyCss[0]));
 }
 
+// Loom E/F behavioral tests: execute the actual IIFEs in a vm sandbox with a
+// stubbed DOM (getElementById/matchMedia/rAF/performance/timers) and drive
+// their state machines. This covers the logic paths the static checks above
+// cannot: debounce, teardown/start idempotency, reduced-motion transitions,
+// DPR capping, and the null-getContext guard (ship coverage audit, 2026-07-03).
+function makeLoomSandbox(opts) {
+  opts = opts || {};
+  const S = {
+    now: 1000,
+    rafCount: 0, rafCbs: [], cancelled: [],
+    timeoutCount: 0, clearedTimeouts: [],
+    winListeners: {}, docListeners: {}, mqListeners: [],
+    clearRectCalls: 0,
+    dotWaveEl: { style: {} },
+    mq: {
+      matches: !!opts.reduced,
+      addEventListener: function (type, fn) { S.mqListeners.push(fn); }
+    }
+  };
+  const ctx2d = {
+    setTransform: () => {}, clearRect: () => { S.clearRectCalls++; },
+    beginPath: () => {}, moveTo: () => {}, lineTo: () => {}, stroke: () => {},
+    arc: () => {}, rect: () => {}, fill: () => {}
+  };
+  const canvas = {
+    style: {}, width: 0, height: 0,
+    getContext: () => (opts.nullCtx ? null : ctx2d)
+  };
+  const sandbox = {
+    console: { log: () => {} },
+    document: {
+      hidden: false,
+      getElementById: function (id) {
+        if (id === 'dotWave') return opts.hasDotWave === false ? null : S.dotWaveEl;
+        if (id === 'threadCanvas') return opts.hasCanvas === false ? null : canvas;
+        return null;
+      },
+      querySelector: () => null,
+      body: { classList: { contains: () => false } },
+      addEventListener: function (t, f) { S.docListeners[t] = f; }
+    },
+    getComputedStyle: () => ({ getPropertyValue: () => ' #2dd4bf ' }),
+    performance: { now: () => S.now },
+    requestAnimationFrame: function (cb) { S.rafCount++; S.rafCbs.push(cb); return S.rafCount; },
+    cancelAnimationFrame: function (id) { S.cancelled.push(id); },
+    setTimeout: function (fn, ms) { S.timeoutCount++; return S.timeoutCount; },
+    clearTimeout: function (id) { if (id) S.clearedTimeouts.push(id); }
+  };
+  sandbox.window = {
+    matchMedia: () => S.mq,
+    innerWidth: opts.innerWidth || 1024,
+    innerHeight: opts.innerHeight || 768,
+    devicePixelRatio: opts.dpr || 1,
+    addEventListener: function (t, f) { S.winListeners[t] = f; }
+  };
+  return { ctx: vm.createContext(sandbox), sandbox, S, canvas };
+}
+
+function checkLoomEFBehavior(scripts) {
+  const eBody = scripts.find(s => s.includes('makeThread') && s.includes("getElementById('threadCanvas')")) || '';
+  const fBody = scripts.find(s => s.includes('window._dotWavePlay')) || '';
+
+  // --- Loom F (dot-glow wave) ---
+  try {
+    const t = makeLoomSandbox({ reduced: true });
+    vm.runInContext(fBody, t.ctx);
+    check('Loom F vm: reduced-motion at load — play() schedules nothing',
+      t.S.rafCount === 0 && t.S.dotWaveEl.style.backgroundImage === undefined);
+  } catch (e) {
+    failures.push('Loom F vm reduced-at-load: ' + e.message);
+  }
+
+  try {
+    const t = makeLoomSandbox({ hasDotWave: false });
+    vm.runInContext(fBody, t.ctx);
+    check('Loom F vm: missing #dotWave — early return, no export, no throw',
+      t.S.rafCount === 0 && t.sandbox.window._dotWavePlay === undefined);
+  } catch (e) {
+    failures.push('Loom F vm missing element: ' + e.message);
+  }
+
+  try {
+    const t = makeLoomSandbox({});
+    vm.runInContext(fBody, t.ctx);
+    check('Loom F vm: initial auto-play starts one sweep on load', t.S.rafCount === 1);
+    t.sandbox.window._dotWavePlay();
+    check('Loom F vm: play() debounces while a sweep is running (no overlapping rAF chain)',
+      t.S.rafCount === 1);
+    t.S.rafCbs[0](t.S.now + 700);            // mid-sweep frame (p = 0.5)
+    check('Loom F vm: mid-sweep frame keeps full opacity and schedules the next frame',
+      Number(t.S.dotWaveEl.style.opacity) === 1 && t.S.rafCount === 2);
+    t.S.rafCbs[1](t.S.now + 1500);           // past sweepMs — sweep completes
+    check('Loom F vm: completed sweep fades to opacity 0 and stops the rAF chain',
+      Number(t.S.dotWaveEl.style.opacity) === 0 && t.S.rafCount === 2);
+    t.sandbox.window._dotWavePlay();
+    check('Loom F vm: play() re-arms after a completed sweep (running flag reset)',
+      t.S.rafCount === 3);
+  } catch (e) {
+    failures.push('Loom F vm debounce/completion: ' + e.message);
+  }
+
+  try {
+    const t = makeLoomSandbox({});
+    vm.runInContext(fBody, t.ctx);              // sweep running (raf id 1)
+    t.S.mq.matches = true;
+    t.S.mqListeners.forEach(f => f());
+    check('Loom F vm: reduced-motion change mid-sweep cancels the rAF and zeroes opacity',
+      t.S.cancelled.indexOf(1) !== -1 && Number(t.S.dotWaveEl.style.opacity) === 0);
+    t.S.mq.matches = false;
+    t.sandbox.window._dotWavePlay();
+    check('Loom F vm: play() works again after a cancelled sweep (running flag reset by mq handler)',
+      t.S.rafCount === 2);
+  } catch (e) {
+    failures.push('Loom F vm mq cancel: ' + e.message);
+  }
+
+  // --- Loom E (ambient thread weave) ---
+  try {
+    const t = makeLoomSandbox({ hasCanvas: false });
+    vm.runInContext(eBody, t.ctx);
+    check('Loom E vm: missing #threadCanvas — early return, no listeners, no throw',
+      t.S.rafCount === 0 && t.S.winListeners.resize === undefined);
+  } catch (e) {
+    failures.push('Loom E vm missing canvas: ' + e.message);
+  }
+
+  try {
+    const t = makeLoomSandbox({ nullCtx: true });
+    vm.runInContext(eBody, t.ctx);
+    check('Loom E vm: null getContext (canvas blocked) — early return, resize listener never registered (regression: unguarded ctx.setTransform on resize)',
+      t.S.winListeners.resize === undefined && t.S.rafCount === 0);
+  } catch (e) {
+    failures.push('Loom E vm null ctx: ' + e.message);
+  }
+
+  try {
+    const t = makeLoomSandbox({ reduced: true });
+    vm.runInContext(eBody, t.ctx);
+    check('Loom E vm: reduced-motion at load — start() is a no-op (no rAF, no spawn timer)',
+      t.S.rafCount === 0 && t.S.timeoutCount === 0);
+  } catch (e) {
+    failures.push('Loom E vm reduced-at-load: ' + e.message);
+  }
+
+  try {
+    const t = makeLoomSandbox({ dpr: 3, innerWidth: 800, innerHeight: 600 });
+    vm.runInContext(eBody, t.ctx);
+    check('Loom E vm: normal load starts the loop (rAF + spawn timer scheduled)',
+      t.S.rafCount >= 1 && t.S.timeoutCount >= 1);
+    check('Loom E vm: resize() caps devicePixelRatio at 2 (canvas.width = 800 * 2, not * 3)',
+      t.canvas.width === 1600 && t.canvas.height === 1200);
+    t.sandbox.window.innerWidth = 500; t.sandbox.window.innerHeight = 400;
+    t.S.winListeners.resize();
+    check('Loom E vm: window resize re-measures the canvas with the capped DPR',
+      t.canvas.width === 1000 && t.canvas.height === 800);
+    t.S.now = 1100;                           // 100ms after birth — thread still drawing
+    t.S.rafCbs[t.S.rafCbs.length - 1]();
+    check('Loom E vm: frame loop draws without throwing and clears the canvas each frame',
+      t.S.clearRectCalls >= 1);
+  } catch (e) {
+    failures.push('Loom E vm load/resize/frame: ' + e.message);
+  }
+
+  try {
+    const t = makeLoomSandbox({});
+    vm.runInContext(eBody, t.ctx);              // running: rAF id 1 pending, spawn timer set
+    t.S.mq.matches = true;
+    t.S.mqListeners.forEach(f => f());          // -> teardown()
+    check('Loom E vm: reduced-motion ON tears down (rAF cancelled, canvas cleared)',
+      t.S.cancelled.length >= 1 && t.S.clearRectCalls >= 1);
+    let secondTeardownThrew = false;
+    try { t.S.mqListeners.forEach(f => f()); } catch (e2) { secondTeardownThrew = true; }
+    check('Loom E vm: teardown() is idempotent — a second reduced-motion event does not throw',
+      secondTeardownThrew === false);
+    t.S.mq.matches = false;
+    t.S.mqListeners.forEach(f => f());          // -> start()
+    const timeoutsAfterStart = t.S.timeoutCount;
+    check('Loom E vm: reduced-motion OFF restarts the weave (new spawn timer)',
+      timeoutsAfterStart >= 2);
+    t.S.mqListeners.forEach(f => f());          // start() again while running
+    check('Loom E vm: start() is guarded — a repeat start while running schedules nothing new',
+      t.S.timeoutCount === timeoutsAfterStart);
+  } catch (e) {
+    failures.push('Loom E vm teardown/start idempotency: ' + e.message);
+  }
+
+  try {
+    const t = makeLoomSandbox({});
+    vm.runInContext(eBody, t.ctx);
+    const clearedBefore = t.S.clearedTimeouts.length;
+    t.sandbox.document.hidden = true;
+    t.S.docListeners.visibilitychange();
+    check('Loom E vm: tab hidden clears the spawn timer (stops spawning)',
+      t.S.clearedTimeouts.length > clearedBefore);
+    const timeoutsBefore = t.S.timeoutCount;
+    t.sandbox.document.hidden = false;
+    t.S.docListeners.visibilitychange();
+    check('Loom E vm: tab visible again reschedules spawning',
+      t.S.timeoutCount > timeoutsBefore);
+  } catch (e) {
+    failures.push('Loom E vm visibilitychange: ' + e.message);
+  }
+}
+
 const requiredFiles = [
   'Code.js',
   'Index.html',
@@ -1559,6 +1763,7 @@ inlineScripts.forEach((script, index) => {
 checkPhase4Helpers(htmlSource);
 checkWeaveTeardownSplit(htmlSource);
 checkLoomEF(htmlSource, inlineScripts);
+checkLoomEFBehavior(inlineScripts);
 checkLocalStorageConvention(htmlSource);
 
 // Phase 4 (branding): branding presence checks

@@ -2926,6 +2926,7 @@
       var canvas = document.getElementById('threadCanvas');
       if (!canvas) return;
       var ctx = canvas.getContext('2d');
+      if (!ctx) return; // canvas blocked (extension/fingerprint defense) — no weave, no errors
       var vw = 0, vh = 0, dpr = 1, threadColor = '#2dd4bf', isNes = false;
       var threads = [], spawnTimer = null, wakeTimer = null, rafId = null, running = false;
       var mq = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
