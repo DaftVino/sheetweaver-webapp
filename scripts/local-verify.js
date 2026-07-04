@@ -1482,17 +1482,19 @@ function checkLoomEF(htmlSrc, scripts) {
   check('Loom E: defines idempotent teardown() and start()',
     /function teardown\s*\(/.test(eBody) && /function start\s*\(/.test(eBody));
   check('Loom E: uses a canvas 2D context', /getContext\(\s*['"]2d['"]\s*\)/.test(eBody));
-  check('Loom E: has the clamped animation clock (AC7) — tick() clamps >100ms deltas',
-    /function tick\s*\(/.test(eBody) && /d > 100 \? 16 : d/.test(eBody));
-  check('Loom E: draw-phase head progress is eased (smoothstep)',
-    /function ease\s*\(/.test(eBody) && /head = ease\(e \/ th\.drawMs\)/.test(eBody));
+  check('Loom E: has the clamped animation clock (AC7) — tick() + wakeAfter() present',
+    /function tick\s*\(/.test(eBody) && /function wakeAfter\s*\(/.test(eBody));
+  check('Loom E: draw-phase head progress is eased',
+    /function ease\s*\(/.test(eBody) && /head = ease\(/.test(eBody));
+  check('Loom E: applyTheme is wired to the weave theme hook',
+    /window\._loomThemeChanged\s*=/.test(eBody) && /_loomThemeChanged\(\)/.test(htmlSrc));
 
   const fBody = scripts.find(s => s.includes('window._dotWavePlay')) || '';
   check('Loom F: engine block present', fBody.length > 0);
   check('Loom F: guards prefers-reduced-motion', /prefers-reduced-motion[^)]*reduce/.test(fBody));
   check('Loom F: exposes _dotWavePlay', /window\._dotWavePlay\s*=/.test(fBody));
   check('Loom F: sweep is triggered from nextStep(0)',
-    /stepNumber === 0[\s\S]{0,120}_dotWavePlay/.test(htmlSrc));
+    /if \(stepNumber === 0[^\n]*_dotWavePlay\(\)/.test(htmlSrc));
 
   // Backdrop: the dot grid + bloom render as a fixed full-viewport layer so the
   // background always covers 100% of the screen on load (no content-height breaks)
@@ -1528,10 +1530,13 @@ function makeLoomSandbox(opts) {
       addEventListener: function (type, fn) { S.mqListeners.push(fn); }
     }
   };
+  S.nodeCalls = []; // node-draw centers recorded from ctx.arc/ctx.rect (thread endpoints)
   const ctx2d = {
     setTransform: () => {}, clearRect: () => { S.clearRectCalls++; },
     beginPath: () => {}, moveTo: () => {}, lineTo: () => {}, stroke: () => {},
-    arc: () => {}, rect: () => {}, fill: () => {}
+    arc: (x, y) => { S.nodeCalls.push({ x: x, y: y }); },
+    rect: (x, y, w, h) => { S.nodeCalls.push({ x: x + w / 2, y: y + h / 2 }); },
+    fill: () => {}
   };
   const canvas = {
     style: {}, width: 0, height: 0,
@@ -1546,7 +1551,12 @@ function makeLoomSandbox(opts) {
         if (id === 'threadCanvas') return opts.hasCanvas === false ? null : canvas;
         return null;
       },
-      querySelector: () => null,
+      querySelector: function (sel) {
+        if (sel === '.container' && opts.containerRect) {
+          return { getBoundingClientRect: () => opts.containerRect };
+        }
+        return null;
+      },
       body: { classList: { contains: () => false } },
       addEventListener: function (t, f) { S.docListeners[t] = f; }
     },
@@ -1564,6 +1574,17 @@ function makeLoomSandbox(opts) {
     devicePixelRatio: opts.dpr || 1,
     addEventListener: function (t, f) { S.winListeners[t] = f; }
   };
+  if (opts.seed !== undefined) {
+    // Deterministic RNG so geometry assertions (card avoidance) are stable.
+    let seed = opts.seed >>> 0;
+    const seededMath = {};
+    Object.getOwnPropertyNames(Math).forEach(k => { seededMath[k] = Math[k]; });
+    seededMath.random = function () {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      return seed / 4294967296;
+    };
+    sandbox.Math = seededMath;
+  }
   return { ctx: vm.createContext(sandbox), sandbox, S, canvas };
 }
 
@@ -1662,7 +1683,10 @@ function checkLoomEFBehavior(scripts) {
       t.canvas.width === 1600 && t.canvas.height === 1200);
     t.sandbox.window.innerWidth = 500; t.sandbox.window.innerHeight = 400;
     t.S.winListeners.resize();
-    check('Loom E vm: window resize re-measures the canvas with the capped DPR',
+    check('Loom E vm: resize is debounced — no synchronous canvas reallocation on the raw event',
+      t.canvas.width === 1600);
+    t.S.timers[t.S.timers.length - 1].fn();  // fire the trailing debounce
+    check('Loom E vm: debounced resize re-measures the canvas with the capped DPR',
       t.canvas.width === 1000 && t.canvas.height === 800);
     t.S.now = 1100;                           // 100ms after birth — thread still drawing
     t.S.rafCbs[t.S.rafCbs.length - 1]();
@@ -1736,6 +1760,97 @@ function checkLoomEFBehavior(scripts) {
       t.S.rafCount > rafBeforeFade);
   } catch (e) {
     failures.push('Loom E vm sleep-wake credit: ' + e.message);
+  }
+
+  // Stale wake-timer regression (red-team, 2026-07-03): a spawn that wakes the
+  // loop mid-sleep must clear the pending hold-fade wake timer, or the timer
+  // later fires wakeAfter() and double-credits the clock by up to ~10s.
+  try {
+    const t = makeLoomSandbox({});
+    vm.runInContext(eBody, t.ctx);
+    let guard = 0;
+    while (guard++ < 300) {
+      const before = t.S.rafCount;
+      t.S.now += 100;
+      t.S.rafCbs[t.S.rafCbs.length - 1]();
+      if (t.S.rafCount === before) break;       // asleep — wake timer just scheduled
+    }
+    const wakeTimer = t.S.timers[t.S.timers.length - 1];
+    t.S.now += 500;
+    t.S.timers[0].fn();                          // pending spawn timer fires → spawnTick → wake()
+    check('Loom E vm: a spawn that wakes the sleeping loop clears the pending wake timer (stale double-credit regression)',
+      t.S.clearedTimeouts.indexOf(wakeTimer.id) !== -1);
+  } catch (e) {
+    failures.push('Loom E vm stale wake timer: ' + e.message);
+  }
+
+  // spawnTick behavior: fires a real spawn + reschedules while visible; goes
+  // silent (no reschedule) when the tab is hidden at fire time.
+  try {
+    const t = makeLoomSandbox({});
+    vm.runInContext(eBody, t.ctx);
+    const timeoutsBefore = t.S.timeoutCount;
+    t.S.timers[0].fn();                          // spawn timer → spawnTick
+    check('Loom E vm: spawnTick reschedules itself while the tab is visible',
+      t.S.timeoutCount > timeoutsBefore);
+    t.sandbox.document.hidden = true;
+    const timeoutsHidden = t.S.timeoutCount;
+    t.S.timers[t.S.timers.length - 1].fn();      // next spawn timer fires while hidden
+    check('Loom E vm: spawnTick does not spawn or reschedule while the tab is hidden',
+      t.S.timeoutCount === timeoutsHidden);
+  } catch (e) {
+    failures.push('Loom E vm spawnTick: ' + e.message);
+  }
+
+  // Card avoidance (AC6/AC15): with a card stub and a seeded RNG, the seed
+  // thread's two endpoint nodes must never BOTH sit inside the padded card
+  // rect. Runs across several seeds so the invariant isn't seed-luck.
+  try {
+    const card = { left: 362, top: 234, right: 662, bottom: 534 }; // 300x300 centered in 1024x768
+    const pad = 14;
+    const inCard = p => p.x >= card.left - pad && p.x <= card.right + pad &&
+                        p.y >= card.top - pad && p.y <= card.bottom + pad;
+    let allSeedsOk = true, pairsChecked = 0;
+    for (const seed of [1, 7, 42, 1234, 99991]) {
+      const t = makeLoomSandbox({ seed: seed, containerRect: card });
+      vm.runInContext(eBody, t.ctx);
+      let guard = 0;
+      while (guard++ < 300) {                    // drive until both endpoint nodes render in one frame
+        t.S.nodeCalls.length = 0;
+        t.S.now += 100;
+        t.S.rafCbs[t.S.rafCbs.length - 1]();
+        if (t.S.nodeCalls.length >= 2) break;
+      }
+      if (t.S.nodeCalls.length >= 2) {
+        pairsChecked++;
+        if (inCard(t.S.nodeCalls[0]) && inCard(t.S.nodeCalls[1])) allSeedsOk = false;
+      }
+    }
+    check('Loom E vm: card avoidance — no thread ever has both endpoints inside the padded card rect (5 seeds)',
+      pairsChecked === 5 && allSeedsOk, `pairs checked: ${pairsChecked}, invariant held: ${allSeedsOk}`);
+  } catch (e) {
+    failures.push('Loom E vm card avoidance: ' + e.message);
+  }
+
+  // Theme-change hook: applyTheme() calls window._loomThemeChanged so held
+  // threads repaint in the new theme even while the gated loop sleeps.
+  try {
+    const t = makeLoomSandbox({});
+    vm.runInContext(eBody, t.ctx);
+    check('Loom E vm: exposes window._loomThemeChanged', typeof t.sandbox.window._loomThemeChanged === 'function');
+    let guard = 0;
+    while (guard++ < 300) {
+      const before = t.S.rafCount;
+      t.S.now += 100;
+      t.S.rafCbs[t.S.rafCbs.length - 1]();
+      if (t.S.rafCount === before) break;       // asleep mid-hold
+    }
+    const rafBefore = t.S.rafCount;
+    t.sandbox.window._loomThemeChanged();
+    check('Loom E vm: _loomThemeChanged wakes the sleeping loop for a one-shot repaint',
+      t.S.rafCount === rafBefore + 1);
+  } catch (e) {
+    failures.push('Loom E vm theme-change hook: ' + e.message);
   }
 
   try {

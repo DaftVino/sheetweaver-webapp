@@ -1217,6 +1217,10 @@
             btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
           });
         }
+
+        // Loom E repaints held threads in the new theme's --thread color even
+        // while its gated rAF loop is asleep (it caches the theme per wake).
+        if (typeof window._loomThemeChanged === 'function') window._loomThemeChanged();
       }
 
       function getThemeDisplayName(themeName) {
@@ -1816,11 +1820,17 @@
         const leavingStep3 = step3El && step3El.classList.contains('active') && stepNumber !== 3;
         if (leavingStep3 && typeof _weaveTeardown === 'function') _weaveTeardown();
 
+        // Loom F sweeps only on a transition INTO the dashboard from a wizard
+        // step. Re-renders of an already-active dashboard (pause/delete/mend
+        // refreshes route through nextStep(0)) must not replay the glow, and
+        // the parse-time play() already covers the initial page load.
+        const prevActive = document.querySelector('.step.active');
+        const wasStep0 = !!prevActive && prevActive.id === 'step-0';
+
         document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
         document.getElementById('step-' + stepNumber).classList.add('active');
 
-        // Loom F: the dot-glow wave sweeps once each time the dashboard opens.
-        if (stepNumber === 0 && typeof _dotWavePlay === 'function') _dotWavePlay();
+        if (stepNumber === 0 && !wasStep0 && typeof _dotWavePlay === 'function') _dotWavePlay();
 
         document.querySelectorAll('.landing-only').forEach(el => {
           if (stepNumber !== 0) {
@@ -2890,7 +2900,7 @@
         if (reduced() && raf) { cancelAnimationFrame(raf); raf = null; running = false; el.style.opacity = 0; }
       });
       window._dotWavePlay = play;
-      try { play(); } catch (e) {}                     // initial load: step-0 is the active step
+      try { play(); } catch (e) {}                     // initial load: step-0 is the active step; decorative — never block
     })();
     </script>
 
@@ -2919,15 +2929,19 @@
         maxOpacity: 0.5, strokeWidth: 1, taperEnd: 0.15, nodePulse: 0.75, nodeRadius: 1, pulseDecayMs: 750,
         ampMin: 5, ampMax: 15, longAmpMin: 1.5, longAmpMax: 2, wavesMin: 1, wavesMax: 3,
         drawMsMin: 2000, drawMsMax: 3000, holdMs: 10000, fadeMs: 1500,
-        gapMin: 0.5, gapMax: 10, bias: 0.25, concurrency: 5,
+        gapMin: 3, gapMax: 10, bias: 0.25, concurrency: 5, // gapMin 3s: mean gap (~6.9s) exceeds a thread's animated window (~5s) so the rAF gate sleeps most of the time (AC13)
         longPct: 65, shortMin: 3, shortMax: 12, longMin: 15, longMax: 30
       };
-      var PITCH = 24, OFF = 12, PULSE_TAIL = 3300; // ms of hold during which a node pulse is still visibly settling
+      // PITCH/OFF must match the CSS dot grid (background-size: 24px 24px at
+      // 12px offsets on #loomBackdrop/#dotWave/#weaveDots) or threads miss the dots.
+      var PITCH = 24, OFF = 12;
+      var PULSE_TAIL = E.pulseDecayMs * 2; // ≈1500ms: exp(−2)≈0.14 — pulse visually settled; shorter tail lets the gated loop actually sleep (AC13)
+      var FALLBACK_THREAD = '#2dd4bf';       // mirrors the --thread token default (Solar)
       var canvas = document.getElementById('threadCanvas');
       if (!canvas) return;
       var ctx = canvas.getContext('2d');
       if (!ctx) return; // canvas blocked (extension/fingerprint defense) — no weave, no errors
-      var vw = 0, vh = 0, dpr = 1, threadColor = '#2dd4bf', isNes = false;
+      var vw = 0, vh = 0, dpr = 1, threadColor = FALLBACK_THREAD, isNes = false;
       var threads = [], spawnTimer = null, wakeTimer = null, rafId = null, running = false;
       var mq = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
       function reduced() { return mq ? mq.matches : false; }
@@ -2959,7 +2973,7 @@
       }
       function readTheme() {
         isNes = document.body.classList.contains('theme-nes');
-        threadColor = getComputedStyle(document.body).getPropertyValue('--thread').trim() || '#2dd4bf';
+        threadColor = getComputedStyle(document.body).getPropertyValue('--thread').trim() || FALLBACK_THREAD;
       }
       function cardRect() {
         var c = document.querySelector('.container');
@@ -2989,7 +3003,7 @@
         var waves = randInt(E.wavesMin, E.wavesMax);
         var amp = rand(E.ampMin, E.ampMax) * (isLong ? rand(E.longAmpMin, E.longAmpMax) : 1);
         amp = Math.min(amp, lineLen * 0.3);
-        var N = Math.max(20, Math.round(lineLen / 4)), pts = new Array(N + 1);
+        var N = Math.max(20, Math.round(lineLen / 12)), pts = new Array(N + 1); // /12: 3× fewer per-segment strokes; indistinguishable at 1px width
         for (var k = 0; k <= N; k++) {
           var t = k / N, disp = amp * Math.sin(t * Math.PI * waves);
           pts[k] = { x: sx + dx * t + nx * disp, y: sy + dy * t + ny * disp };
@@ -3053,7 +3067,6 @@
       }
       function frame() {
         var now = tick();
-        readTheme();                    // pick up live theme switches
         ctx.clearRect(0, 0, vw, vh);
         var active = false;
         for (var i = threads.length - 1; i >= 0; i--) {
@@ -3067,6 +3080,9 @@
       }
       function wake() {
         if (running || reduced()) return;
+        // A live loop supersedes any scheduled sleep-wake: kill the pending
+        // timer so a spawn/resize wake can't leave it to double-credit later.
+        clearTimeout(wakeTimer); wakeTimer = null;
         running = true;
         rafId = requestAnimationFrame(frame);
       }
@@ -3074,6 +3090,7 @@
         // Intentional hold/idle sleep: credit exactly the scheduled interval,
         // never the (possibly throttled) wall time that actually passed, then
         // resync the wall baseline — anti-fast-forward on hidden tabs (AC7).
+        if (running) return; // a spawn already woke the loop — the clock is live, never double-credit
         clock += credited; lastWall = performance.now();
         wake();
       }
@@ -3086,7 +3103,7 @@
       }
       function spawnTick() {
         if (!document.hidden && !reduced() && threads.length < E.concurrency) {
-          try { threads.push(makeThread()); wake(); } catch (e) {}
+          try { threads.push(makeThread()); wake(); } catch (e) {} // a failed spawn skips one beat, never kills the scheduler
         }
         if (!document.hidden && !reduced()) scheduleSpawn();
       }
@@ -3101,11 +3118,21 @@
       function start() {
         if (running || reduced()) return;
         resize(); readTheme();
-        try { threads.push(makeThread()); } catch (e) {}
+        try { threads.push(makeThread()); } catch (e) {} // seed thread is best-effort; the scheduler recovers
         wake(); scheduleSpawn();
       }
 
-      window.addEventListener('resize', function () { resize(); wake(); });
+      var resizeTimer = null;
+      window.addEventListener('resize', function () {
+        // Debounced: raw resize events fire continuously during window drags,
+        // and each resize() reallocates a multi-megapixel canvas backing store.
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(function () {
+          if (window.innerWidth === vw && window.innerHeight === vh &&
+              Math.min(window.devicePixelRatio || 1, 2) === dpr) return;
+          resize(); wake();
+        }, 150);
+      });
       document.addEventListener('visibilitychange', function () {
         if (document.hidden) clearTimeout(spawnTimer);
         else if (!reduced()) scheduleSpawn();
@@ -3113,7 +3140,10 @@
       if (mq) (mq.addEventListener ? mq.addEventListener.bind(mq, 'change') : mq.addListener.bind(mq))(function () {
         if (reduced()) teardown(); else start();
       });
-      try { start(); } catch (e) {}
+      // applyTheme() calls this so held threads repaint in the new theme's
+      // color/shape immediately — the gated loop may be asleep mid-hold.
+      window._loomThemeChanged = function () { readTheme(); wake(); };
+      try { start(); } catch (e) {} // decorative only — a broken weave must never block the app
     })();
     </script>
   </body>
