@@ -1458,6 +1458,462 @@ function checkWeaveTeardownSplit(htmlSrc) {
     !!doubleFireGuardRegion && /_weaveClearStaleDom\s*\(\s*\)/.test(doubleFireGuardRegion[0]) && !/[^_]_weaveTeardown\s*\(\s*\)/.test(doubleFireGuardRegion[0]));
 }
 
+// Loom E (ambient thread weave) + Loom F (dot-glow wave): static invariants.
+// No DOM/canvas harness exists (GAS webapp, manual QA), so verify the load-bearing
+// contracts the eng + design reviews locked: both background layers sit behind the
+// card (z-index -1), both are prefers-reduced-motion guarded, Loom E's lifecycle is
+// idempotent, and Loom F's sweep is wired to the dashboard (step-0) trigger.
+function checkLoomEF(htmlSrc, scripts) {
+  check('Loom E: Index.html has the #threadCanvas element',
+    /<canvas[^>]*id="threadCanvas"/.test(htmlSrc));
+  check('Loom F: Index.html has the #dotWave element',
+    /id="dotWave"/.test(htmlSrc));
+
+  const canvasCss = htmlSrc.match(/#threadCanvas\s*\{[^}]*\}/);
+  const dotWaveCss = htmlSrc.match(/#dotWave\s*\{[^}]*\}/);
+  check('Loom E: #threadCanvas sits behind the card (z-index -1)',
+    !!canvasCss && /z-index:\s*-1/.test(canvasCss[0]));
+  check('Loom F: #dotWave sits behind the card (z-index -1)',
+    !!dotWaveCss && /z-index:\s*-1/.test(dotWaveCss[0]));
+
+  const eBody = scripts.find(s => s.includes('makeThread') && s.includes("getElementById('threadCanvas')")) || '';
+  check('Loom E: engine block present', eBody.length > 0);
+  check('Loom E: guards prefers-reduced-motion', /prefers-reduced-motion[^)]*reduce/.test(eBody));
+  check('Loom E: defines idempotent teardown() and start()',
+    /function teardown\s*\(/.test(eBody) && /function start\s*\(/.test(eBody));
+  check('Loom E: uses a canvas 2D context', /getContext\(\s*['"]2d['"]\s*\)/.test(eBody));
+  check('Loom E: has the clamped animation clock (AC7) — tick() + capped sleep-credit present',
+    /function tick\s*\(/.test(eBody) && /sleepWall/.test(eBody) && /sleepCredit/.test(eBody));
+  check('Loom E: draw-phase head progress is eased',
+    /function ease\s*\(/.test(eBody) && /head = ease\(/.test(eBody));
+  check('Loom E: applyTheme is wired to the weave theme hook',
+    /window\._loomThemeChanged\s*=/.test(eBody) && /_loomThemeChanged\(\)/.test(htmlSrc));
+
+  const fBody = scripts.find(s => s.includes('window._dotWavePlay')) || '';
+  check('Loom F: engine block present', fBody.length > 0);
+  check('Loom F: guards prefers-reduced-motion', /prefers-reduced-motion[^)]*reduce/.test(fBody));
+  check('Loom F: exposes _dotWavePlay', /window\._dotWavePlay\s*=/.test(fBody));
+  check('Loom F: sweep is triggered from nextStep(0)',
+    /if \(stepNumber === 0[^\n]*_dotWavePlay\(\)/.test(htmlSrc));
+
+  // Backdrop: the dot grid + bloom render as a fixed full-viewport layer so the
+  // background always covers 100% of the screen on load (no content-height breaks)
+  // and registers with the fixed thread/wave layers.
+  check('Loom backdrop: Index.html has the #loomBackdrop element',
+    /id="loomBackdrop"/.test(htmlSrc));
+  const backdropCss = htmlSrc.match(/#loomBackdrop\s*\{[^}]*\}/);
+  check('Loom backdrop: #loomBackdrop is fixed, full-viewport, z-index -2',
+    !!backdropCss && /position:\s*fixed/.test(backdropCss[0]) &&
+    /inset:\s*0/.test(backdropCss[0]) && /z-index:\s*-2/.test(backdropCss[0]) &&
+    /radial-gradient/.test(backdropCss[0]));
+  const bodyCss = htmlSrc.match(/\n\s*body\s*\{[^}]*\}/);
+  check('Loom backdrop: <body> no longer paints the dot grid (moved to #loomBackdrop)',
+    !!bodyCss && !/background-image/.test(bodyCss[0]));
+}
+
+// Loom E/F behavioral tests: execute the actual IIFEs in a vm sandbox with a
+// stubbed DOM (getElementById/matchMedia/rAF/performance/timers) and drive
+// their state machines. This covers the logic paths the static checks above
+// cannot: debounce, teardown/start idempotency, reduced-motion transitions,
+// DPR capping, and the null-getContext guard (ship coverage audit, 2026-07-03).
+function makeLoomSandbox(opts) {
+  opts = opts || {};
+  const S = {
+    now: 1000,
+    rafCount: 0, rafCbs: [], cancelled: [],
+    timeoutCount: 0, timers: [], clearedTimeouts: [],
+    winListeners: {}, docListeners: {}, mqListeners: [],
+    clearRectCalls: 0,
+    dotWaveEl: { style: {} },
+    mq: {
+      matches: !!opts.reduced,
+      addEventListener: function (type, fn) { S.mqListeners.push(fn); }
+    }
+  };
+  S.nodeCalls = []; // node-draw centers recorded from ctx.arc/ctx.rect (thread endpoints)
+  const ctx2d = {
+    setTransform: () => {}, clearRect: () => { S.clearRectCalls++; },
+    beginPath: () => {}, moveTo: () => {}, lineTo: () => {}, stroke: () => {},
+    arc: (x, y) => { S.nodeCalls.push({ x: x, y: y }); },
+    rect: (x, y, w, h) => { S.nodeCalls.push({ x: x + w / 2, y: y + h / 2 }); },
+    fill: () => {}
+  };
+  const canvas = {
+    style: {}, width: 0, height: 0,
+    getContext: () => (opts.nullCtx ? null : ctx2d)
+  };
+  const sandbox = {
+    console: { log: () => {} },
+    document: {
+      hidden: false,
+      getElementById: function (id) {
+        if (id === 'dotWave') return opts.hasDotWave === false ? null : S.dotWaveEl;
+        if (id === 'threadCanvas') return opts.hasCanvas === false ? null : canvas;
+        return null;
+      },
+      querySelector: function (sel) {
+        if (sel === '.container' && opts.containerRect) {
+          return { getBoundingClientRect: () => opts.containerRect };
+        }
+        return null;
+      },
+      body: { classList: { contains: () => false } },
+      addEventListener: function (t, f) { S.docListeners[t] = f; }
+    },
+    getComputedStyle: () => ({ getPropertyValue: () => ' #2dd4bf ' }),
+    performance: { now: () => S.now },
+    requestAnimationFrame: function (cb) { S.rafCount++; S.rafCbs.push(cb); return S.rafCount; },
+    cancelAnimationFrame: function (id) { S.cancelled.push(id); },
+    setTimeout: function (fn, ms) { S.timeoutCount++; S.timers.push({ id: S.timeoutCount, fn: fn, ms: ms }); return S.timeoutCount; },
+    clearTimeout: function (id) { if (id) S.clearedTimeouts.push(id); }
+  };
+  sandbox.window = {
+    matchMedia: () => S.mq,
+    innerWidth: opts.innerWidth || 1024,
+    innerHeight: opts.innerHeight || 768,
+    devicePixelRatio: opts.dpr || 1,
+    addEventListener: function (t, f) { S.winListeners[t] = f; }
+  };
+  if (opts.seed !== undefined) {
+    // Deterministic RNG so geometry assertions (card avoidance) are stable.
+    let seed = opts.seed >>> 0;
+    const seededMath = {};
+    Object.getOwnPropertyNames(Math).forEach(k => { seededMath[k] = Math[k]; });
+    seededMath.random = function () {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      return seed / 4294967296;
+    };
+    sandbox.Math = seededMath;
+  }
+  return { ctx: vm.createContext(sandbox), sandbox, S, canvas };
+}
+
+function checkLoomEFBehavior(scripts) {
+  const eBody = scripts.find(s => s.includes('makeThread') && s.includes("getElementById('threadCanvas')")) || '';
+  const fBody = scripts.find(s => s.includes('window._dotWavePlay')) || '';
+
+  // --- Loom F (dot-glow wave) ---
+  try {
+    const t = makeLoomSandbox({ reduced: true });
+    vm.runInContext(fBody, t.ctx);
+    check('Loom F vm: reduced-motion at load — play() schedules nothing',
+      t.S.rafCount === 0 && t.S.dotWaveEl.style.backgroundImage === undefined);
+  } catch (e) {
+    failures.push('Loom F vm reduced-at-load: ' + e.message);
+  }
+
+  try {
+    const t = makeLoomSandbox({ hasDotWave: false });
+    vm.runInContext(fBody, t.ctx);
+    check('Loom F vm: missing #dotWave — early return, no export, no throw',
+      t.S.rafCount === 0 && t.sandbox.window._dotWavePlay === undefined);
+  } catch (e) {
+    failures.push('Loom F vm missing element: ' + e.message);
+  }
+
+  try {
+    const t = makeLoomSandbox({});
+    vm.runInContext(fBody, t.ctx);
+    check('Loom F vm: initial auto-play starts one sweep on load', t.S.rafCount === 1);
+    t.sandbox.window._dotWavePlay();
+    check('Loom F vm: play() debounces while a sweep is running (no overlapping rAF chain)',
+      t.S.rafCount === 1);
+    t.S.rafCbs[0](t.S.now + 700);            // mid-sweep frame (p = 0.5)
+    check('Loom F vm: mid-sweep frame keeps full opacity and schedules the next frame',
+      Number(t.S.dotWaveEl.style.opacity) === 1 && t.S.rafCount === 2);
+    t.S.rafCbs[1](t.S.now + 1500);           // past sweepMs — sweep completes
+    check('Loom F vm: completed sweep fades to opacity 0 and stops the rAF chain',
+      Number(t.S.dotWaveEl.style.opacity) === 0 && t.S.rafCount === 2);
+    t.sandbox.window._dotWavePlay();
+    check('Loom F vm: play() re-arms after a completed sweep (running flag reset)',
+      t.S.rafCount === 3);
+  } catch (e) {
+    failures.push('Loom F vm debounce/completion: ' + e.message);
+  }
+
+  try {
+    const t = makeLoomSandbox({});
+    vm.runInContext(fBody, t.ctx);              // sweep running (raf id 1)
+    t.S.mq.matches = true;
+    t.S.mqListeners.forEach(f => f());
+    check('Loom F vm: reduced-motion change mid-sweep cancels the rAF and zeroes opacity',
+      t.S.cancelled.indexOf(1) !== -1 && Number(t.S.dotWaveEl.style.opacity) === 0);
+    t.S.mq.matches = false;
+    t.sandbox.window._dotWavePlay();
+    check('Loom F vm: play() works again after a cancelled sweep (running flag reset by mq handler)',
+      t.S.rafCount === 2);
+  } catch (e) {
+    failures.push('Loom F vm mq cancel: ' + e.message);
+  }
+
+  // --- Loom E (ambient thread weave) ---
+  try {
+    const t = makeLoomSandbox({ hasCanvas: false });
+    vm.runInContext(eBody, t.ctx);
+    check('Loom E vm: missing #threadCanvas — early return, no listeners, no throw',
+      t.S.rafCount === 0 && t.S.winListeners.resize === undefined);
+  } catch (e) {
+    failures.push('Loom E vm missing canvas: ' + e.message);
+  }
+
+  try {
+    const t = makeLoomSandbox({ nullCtx: true });
+    vm.runInContext(eBody, t.ctx);
+    check('Loom E vm: null getContext (canvas blocked) — early return, resize listener never registered (regression: unguarded ctx.setTransform on resize)',
+      t.S.winListeners.resize === undefined && t.S.rafCount === 0);
+  } catch (e) {
+    failures.push('Loom E vm null ctx: ' + e.message);
+  }
+
+  try {
+    const t = makeLoomSandbox({ reduced: true });
+    vm.runInContext(eBody, t.ctx);
+    check('Loom E vm: reduced-motion at load — start() is a no-op (no rAF, no spawn timer)',
+      t.S.rafCount === 0 && t.S.timeoutCount === 0);
+  } catch (e) {
+    failures.push('Loom E vm reduced-at-load: ' + e.message);
+  }
+
+  try {
+    const t = makeLoomSandbox({ dpr: 3, innerWidth: 800, innerHeight: 600 });
+    vm.runInContext(eBody, t.ctx);
+    check('Loom E vm: normal load starts the loop (rAF + spawn timer scheduled)',
+      t.S.rafCount >= 1 && t.S.timeoutCount >= 1);
+    check('Loom E vm: resize() caps devicePixelRatio at 2 (canvas.width = 800 * 2, not * 3)',
+      t.canvas.width === 1600 && t.canvas.height === 1200);
+    t.sandbox.window.innerWidth = 500; t.sandbox.window.innerHeight = 400;
+    t.S.winListeners.resize();
+    check('Loom E vm: resize is debounced — no synchronous canvas reallocation on the raw event',
+      t.canvas.width === 1600);
+    t.S.timers[t.S.timers.length - 1].fn();  // fire the trailing debounce
+    check('Loom E vm: debounced resize re-measures the canvas with the capped DPR',
+      t.canvas.width === 1000 && t.canvas.height === 800);
+    t.S.now = 1100;                           // 100ms after birth — thread still drawing
+    t.S.rafCbs[t.S.rafCbs.length - 1]();
+    check('Loom E vm: frame loop draws without throwing and clears the canvas each frame',
+      t.S.clearRectCalls >= 1);
+  } catch (e) {
+    failures.push('Loom E vm load/resize/frame: ' + e.message);
+  }
+
+  try {
+    const t = makeLoomSandbox({});
+    vm.runInContext(eBody, t.ctx);              // running: rAF id 1 pending, spawn timer set
+    t.S.mq.matches = true;
+    t.S.mqListeners.forEach(f => f());          // -> teardown()
+    check('Loom E vm: reduced-motion ON tears down (rAF cancelled, canvas cleared)',
+      t.S.cancelled.length >= 1 && t.S.clearRectCalls >= 1);
+    let secondTeardownThrew = false;
+    try { t.S.mqListeners.forEach(f => f()); } catch (e2) { secondTeardownThrew = true; }
+    check('Loom E vm: teardown() is idempotent — a second reduced-motion event does not throw',
+      secondTeardownThrew === false);
+    t.S.mq.matches = false;
+    t.S.mqListeners.forEach(f => f());          // -> start()
+    const timeoutsAfterStart = t.S.timeoutCount;
+    check('Loom E vm: reduced-motion OFF restarts the weave (new spawn timer)',
+      timeoutsAfterStart >= 2);
+    t.S.mqListeners.forEach(f => f());          // start() again while running
+    check('Loom E vm: start() is guarded — a repeat start while running schedules nothing new',
+      t.S.timeoutCount === timeoutsAfterStart);
+  } catch (e) {
+    failures.push('Loom E vm teardown/start idempotency: ' + e.message);
+  }
+
+  // Clamped animation clock (AC7): a giant rAF delta (background-tab throttle)
+  // credits ~16ms of thread time, so the in-flight thread is still drawing —
+  // it keeps requesting frames instead of expiring and going to sleep.
+  try {
+    const t = makeLoomSandbox({});
+    vm.runInContext(eBody, t.ctx);              // thread born at clock 0, rAF pending
+    const rafBefore = t.S.rafCount;
+    t.S.now = 1000 + 60000;                     // tab was hidden for a minute
+    t.S.rafCbs[t.S.rafCbs.length - 1]();
+    check('Loom E vm: clamped clock — a 60s rAF gap credits ~16ms, in-flight thread survives and keeps animating (AC7)',
+      t.S.rafCount > rafBefore);
+  } catch (e) {
+    failures.push('Loom E vm clamped clock: ' + e.message);
+  }
+
+  // Hold/idle sleep-wake: drive frames until the loop sleeps (thread in its
+  // static hold), then fire the wake timer — it must credit exactly the
+  // scheduled interval so the thread lands in its fade phase and re-arms rAF.
+  try {
+    const t = makeLoomSandbox({});
+    vm.runInContext(eBody, t.ctx);
+    let guard = 0;
+    while (guard++ < 300) {                     // ≤100ms deltas credit fully
+      const before = t.S.rafCount;
+      t.S.now += 100;
+      t.S.rafCbs[t.S.rafCbs.length - 1]();
+      if (t.S.rafCount === before) break;       // frame didn't re-arm — loop is asleep
+    }
+    check('Loom E vm: gated rAF sleeps during the static hold (frame stops re-arming)', guard < 300);
+    const wakeTimer = t.S.timers[t.S.timers.length - 1]; // scheduled by the sleeping frame
+    const rafBeforeWake = t.S.rafCount;
+    t.S.now += wakeTimer.ms + 50000;            // timer fired late (hidden-tab throttle)
+    wakeTimer.fn();
+    check('Loom E vm: wake timer re-arms the loop', t.S.rafCount === rafBeforeWake + 1);
+    const rafBeforeFade = t.S.rafCount;
+    t.S.now += 16;
+    t.S.rafCbs[t.S.rafCbs.length - 1]();
+    check('Loom E vm: wake credits exactly the scheduled sleep — thread lands in its fade and keeps animating (AC7)',
+      t.S.rafCount > rafBeforeFade);
+  } catch (e) {
+    failures.push('Loom E vm sleep-wake credit: ' + e.message);
+  }
+
+  // Stale wake-timer regression (red-team, 2026-07-03): a spawn that wakes the
+  // loop mid-sleep must clear the pending hold-fade wake timer, or the timer
+  // later fires wakeAfter() and double-credits the clock by up to ~10s.
+  try {
+    const t = makeLoomSandbox({});
+    vm.runInContext(eBody, t.ctx);
+    let guard = 0;
+    while (guard++ < 300) {
+      const before = t.S.rafCount;
+      t.S.now += 100;
+      t.S.rafCbs[t.S.rafCbs.length - 1]();
+      if (t.S.rafCount === before) break;       // asleep — wake timer just scheduled
+    }
+    const wakeTimer = t.S.timers[t.S.timers.length - 1];
+    t.S.now += 500;
+    t.S.timers[0].fn();                          // pending spawn timer fires → spawnTick → wake()
+    check('Loom E vm: a spawn that wakes the sleeping loop clears the pending wake timer (stale double-credit regression)',
+      t.S.clearedTimeouts.indexOf(wakeTimer.id) !== -1);
+  } catch (e) {
+    failures.push('Loom E vm stale wake timer: ' + e.message);
+  }
+
+  // spawnTick behavior: fires a real spawn + reschedules while visible; goes
+  // silent (no reschedule) when the tab is hidden at fire time.
+  try {
+    const t = makeLoomSandbox({});
+    vm.runInContext(eBody, t.ctx);
+    const timeoutsBefore = t.S.timeoutCount;
+    t.S.timers[0].fn();                          // spawn timer → spawnTick
+    check('Loom E vm: spawnTick reschedules itself while the tab is visible',
+      t.S.timeoutCount > timeoutsBefore);
+    t.sandbox.document.hidden = true;
+    const timeoutsHidden = t.S.timeoutCount;
+    t.S.timers[t.S.timers.length - 1].fn();      // next spawn timer fires while hidden
+    check('Loom E vm: spawnTick does not spawn or reschedule while the tab is hidden',
+      t.S.timeoutCount === timeoutsHidden);
+  } catch (e) {
+    failures.push('Loom E vm spawnTick: ' + e.message);
+  }
+
+  // Card avoidance (AC6/AC15): with a card stub and a seeded RNG, the seed
+  // thread's two endpoint nodes must never BOTH sit inside the padded card
+  // rect. Runs across several seeds so the invariant isn't seed-luck.
+  try {
+    const card = { left: 362, top: 234, right: 662, bottom: 534 }; // 300x300 centered in 1024x768
+    const pad = 14;
+    const inCard = p => p.x >= card.left - pad && p.x <= card.right + pad &&
+                        p.y >= card.top - pad && p.y <= card.bottom + pad;
+    let allSeedsOk = true, pairsChecked = 0;
+    for (const seed of [1, 7, 42, 1234, 99991]) {
+      const t = makeLoomSandbox({ seed: seed, containerRect: card });
+      vm.runInContext(eBody, t.ctx);
+      let guard = 0;
+      while (guard++ < 300) {                    // drive until both endpoint nodes render in one frame
+        t.S.nodeCalls.length = 0;
+        t.S.now += 100;
+        t.S.rafCbs[t.S.rafCbs.length - 1]();
+        if (t.S.nodeCalls.length >= 2) break;
+      }
+      if (t.S.nodeCalls.length >= 2) {
+        pairsChecked++;
+        if (inCard(t.S.nodeCalls[0]) && inCard(t.S.nodeCalls[1])) allSeedsOk = false;
+      }
+    }
+    check('Loom E vm: card avoidance — no thread ever has both endpoints inside the padded card rect (5 seeds)',
+      pairsChecked === 5 && allSeedsOk, `pairs checked: ${pairsChecked}, invariant held: ${allSeedsOk}`);
+  } catch (e) {
+    failures.push('Loom E vm card avoidance: ' + e.message);
+  }
+
+  // Interrupted-sleep credit (adversarial finding, 2026-07-03): a wake that
+  // interrupts a hold-sleep must credit the wall time actually slept (capped
+  // at the scheduled interval), or every spawn/theme/resize wake silently
+  // discards hold time and threads hold far past their 10s. Observable: after
+  // sleeping D-scheduled, waking 3s in via the theme hook, and re-sleeping,
+  // the next wake timer must be scheduled ~3s sooner — not at ~D again.
+  try {
+    const t = makeLoomSandbox({});
+    vm.runInContext(eBody, t.ctx);
+    let guard = 0;
+    while (guard++ < 300) {
+      const before = t.S.rafCount;
+      t.S.now += 100;
+      t.S.rafCbs[t.S.rafCbs.length - 1]();
+      if (t.S.rafCount === before) break;       // asleep mid-hold
+    }
+    const firstWake = t.S.timers[t.S.timers.length - 1];
+    t.S.now += 3000;                             // 3s of real sleep, then an interrupting wake
+    t.sandbox.window._loomThemeChanged();        // wakes without spawning a thread
+    t.S.now += 16;
+    t.S.rafCbs[t.S.rafCbs.length - 1]();         // hold frame: inactive — sleeps again
+    const secondWake = t.S.timers[t.S.timers.length - 1];
+    const drop = firstWake.ms - secondWake.ms;
+    check('Loom E vm: a wake interrupting a hold-sleep credits the slept wall time (next wake ~3s sooner, not reset)',
+      drop > 2800 && drop < 3300, `first=${firstWake.ms}ms second=${secondWake.ms}ms drop=${drop}ms`);
+  } catch (e) {
+    failures.push('Loom E vm interrupted-sleep credit: ' + e.message);
+  }
+
+  // Reduced-motion resize guard (adversarial finding): with reduced-motion ON
+  // the feature is fully off — a debounced resize must not reallocate the canvas.
+  try {
+    const t = makeLoomSandbox({ reduced: true });
+    vm.runInContext(eBody, t.ctx);
+    t.sandbox.window.innerWidth = 500; t.sandbox.window.innerHeight = 400;
+    t.S.winListeners.resize();
+    t.S.timers[t.S.timers.length - 1].fn();      // fire the debounce
+    check('Loom E vm: reduced-motion blocks the debounced resize from touching the canvas',
+      t.canvas.width === 0);
+  } catch (e) {
+    failures.push('Loom E vm reduced resize guard: ' + e.message);
+  }
+
+  // Theme-change hook: applyTheme() calls window._loomThemeChanged so held
+  // threads repaint in the new theme even while the gated loop sleeps.
+  try {
+    const t = makeLoomSandbox({});
+    vm.runInContext(eBody, t.ctx);
+    check('Loom E vm: exposes window._loomThemeChanged', typeof t.sandbox.window._loomThemeChanged === 'function');
+    let guard = 0;
+    while (guard++ < 300) {
+      const before = t.S.rafCount;
+      t.S.now += 100;
+      t.S.rafCbs[t.S.rafCbs.length - 1]();
+      if (t.S.rafCount === before) break;       // asleep mid-hold
+    }
+    const rafBefore = t.S.rafCount;
+    t.sandbox.window._loomThemeChanged();
+    check('Loom E vm: _loomThemeChanged wakes the sleeping loop for a one-shot repaint',
+      t.S.rafCount === rafBefore + 1);
+  } catch (e) {
+    failures.push('Loom E vm theme-change hook: ' + e.message);
+  }
+
+  try {
+    const t = makeLoomSandbox({});
+    vm.runInContext(eBody, t.ctx);
+    const clearedBefore = t.S.clearedTimeouts.length;
+    t.sandbox.document.hidden = true;
+    t.S.docListeners.visibilitychange();
+    check('Loom E vm: tab hidden clears the spawn timer (stops spawning)',
+      t.S.clearedTimeouts.length > clearedBefore);
+    const timeoutsBefore = t.S.timeoutCount;
+    t.sandbox.document.hidden = false;
+    t.S.docListeners.visibilitychange();
+    check('Loom E vm: tab visible again reschedules spawning',
+      t.S.timeoutCount > timeoutsBefore);
+  } catch (e) {
+    failures.push('Loom E vm visibilitychange: ' + e.message);
+  }
+}
+
 const requiredFiles = [
   'Code.js',
   'Index.html',
@@ -1485,6 +1941,10 @@ const packageJson = parseJson('package.json');
 if (packageJson) {
   check('npm verify:local script is configured', packageJson.scripts && packageJson.scripts['verify:local'] === 'node scripts/local-verify.js');
   check('@google/clasp dev dependency is present', Boolean(packageJson.devDependencies && packageJson.devDependencies['@google/clasp']));
+  const appVersionMatch = read('Code.js').match(/const APP_VERSION = '([^']+)'/);
+  check('APP_VERSION in Code.js matches package.json version (version drift guard)',
+    !!appVersionMatch && appVersionMatch[1] === packageJson.version,
+    appVersionMatch ? `Code.js=${appVersionMatch[1]} package.json=${packageJson.version}` : 'APP_VERSION not found');
 }
 
 const codeSource = read('Code.js');
@@ -1511,6 +1971,8 @@ inlineScripts.forEach((script, index) => {
 });
 checkPhase4Helpers(htmlSource);
 checkWeaveTeardownSplit(htmlSource);
+checkLoomEF(htmlSource, inlineScripts);
+checkLoomEFBehavior(inlineScripts);
 checkLocalStorageConvention(htmlSource);
 
 // Phase 4 (branding): branding presence checks
