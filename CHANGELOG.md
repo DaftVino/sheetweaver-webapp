@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.1] - 2026-07-03
+
+### Added
+- Contextual "?" help links on dashboard error states (Loom Phase 5). Each error now
+  carries a small circled "?" that deep-links straight to the matching section of the
+  Troubleshooting Guide: setup label/authorization errors, broken Gmail-label and
+  broken sheet-tab connections, a sync run that errored, and the auto-sync-off banner.
+  Cuts time-to-resolution from "open Help → find guide → search" to one click.
+- New "Broken Connection (Gmail Label or Sheet Tab Missing)" section in the
+  Troubleshooting Guide, covering label/tab deletion after setup and the Mend flow.
+- `scripts/local-verify.js` now fails the build if a contextual link points at a
+  Troubleshooting Guide heading that does not exist (anchor-drift guard).
+
 ## [2.3.0] - 2026-07-03
 
 Docs got a cleanup pass, and the wizard's success animation actually plays now.

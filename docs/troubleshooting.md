@@ -40,6 +40,24 @@ Gmail label names are case-sensitive. Go to Gmail Settings → Labels and confir
 
 ---
 
+## Broken Connection (Gmail Label or Sheet Tab Missing)
+
+The dashboard marks a connection **Broken** when the thing it watches has been
+deleted or renamed after setup:
+
+- **Gmail label missing** — the Gmail label this connection syncs no longer exists.
+  Re-create the label with the exact original name (case-sensitive; nested labels use
+  `/`), or delete the connection and set up a new one against the current label.
+- **Sheet tab missing** — the spreadsheet tab this connection writes to was deleted or
+  renamed. Restore the tab name to exactly what was entered at setup, or delete the
+  connection and re-create it against the current tab.
+
+Use the **Mend** button on the connection row to re-validate after you fix the label or
+tab. If it stays broken, open the Admin Diagnostics panel for a report ID and share it
+with your admin.
+
+---
+
 ## "Label not found" or Authorization Error During Setup
 
 Label verification now returns a detailed error message and report ID distinguishing:
