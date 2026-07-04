@@ -1525,6 +1525,35 @@ check('Phase 1: Index.html defines copyDebugInfo function', htmlSource.includes(
 check('Phase 1: Index.html defines _logFailure helper', htmlSource.includes('function _logFailure('));
 check('Phase 1: Index.html has client debug buffer', htmlSource.includes('const _dbg = '));
 
+// Phase 5: contextual "?" troubleshooting links. The anchors live in the
+// TROUBLESHOOT_ANCHORS map in Index.html (NOT as literal troubleshooting.md#slug
+// strings — the href is concatenated at runtime), so scan the map + call sites and
+// validate every declared slug against a real docs/troubleshooting.md heading.
+function checkTroubleshootAnchors(htmlSrc, tsSrc) {
+  const mapBlock = (htmlSrc.match(/TROUBLESHOOT_ANCHORS\s*=\s*\{[\s\S]*?\}/) || [''])[0];
+  const declared = (mapBlock.match(/'([a-z0-9-]+)'/g) || []).map(s => s.replace(/'/g, ''));
+
+  // GitHub-style slugs of every ## heading in troubleshooting.md.
+  const slugs = (tsSrc.match(/^##\s+.+$/gm) || []).map(h =>
+    h.replace(/^##\s+/, '').toLowerCase().replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-'));
+
+  const missing = declared.filter(a => slugs.indexOf(a) === -1);
+  check('Phase 5: every TROUBLESHOOT_ANCHORS slug resolves to a troubleshooting.md heading',
+    declared.length === 3 && missing.length === 0,
+    missing.length ? `missing headings for: ${missing.join(', ')}` : `declared ${declared.length} anchors`);
+
+  const expected = ['label-not-found-or-authorization-error-during-setup',
+                    'broken-connection-gmail-label-or-sheet-tab-missing',
+                    'emails-are-not-being-processed'];
+  check('Phase 5: TROUBLESHOOT_ANCHORS declares exactly the 3 expected slugs',
+    expected.every(e => declared.indexOf(e) !== -1), `declared: ${declared.join(', ')}`);
+
+  const calls = (htmlSrc.match(/_troubleshootLink\(/g) || []).length;
+  check('Phase 5: all 5 contextual error links are wired (5 call sites + 1 helper def = >=6)',
+    calls >= 6, `found ${calls} occurrences`);
+}
+checkTroubleshootAnchors(htmlSource, read('docs/troubleshooting.md'));
+
 if (failures.length > 0) {
   console.error('\nLocal verification failed:');
   failures.forEach(failure => console.error(`- ${failure}`));

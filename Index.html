@@ -541,6 +541,10 @@
       .debug-toast-steps li { margin-bottom: var(--space-1); }
       .debug-toast-footer { margin-top: var(--space-2); font-size: var(--font-xs); color: var(--text-muted); }
 
+      /* Contextual "?" troubleshooting link (Loom Phase 5) — circled glyph, adopts the color of the error text it sits beside */
+      .troubleshoot-link { display: inline-flex; align-items: center; justify-content: center; width: 1.15em; height: 1.15em; margin-left: var(--space-1); border: 1px solid currentColor; border-radius: var(--radius-pill); font-size: var(--font-xs); font-weight: bold; line-height: 1; text-decoration: none; color: inherit; opacity: 0.75; vertical-align: middle; flex: 0 0 auto; }
+      .troubleshoot-link:hover, .troubleshoot-link:focus-visible { opacity: 1; }
+
       /* Help dropdown */
       .help-menu { position: relative; }
       .help-trigger { font-size: var(--font-xs); }
@@ -1241,6 +1245,31 @@
         return btn;
       }
 
+      // Contextual troubleshooting deep-links (Loom Phase 5). Base URL matches the
+      // whole-guide links in the debug toast + Help dropdown; the anchors below are the
+      // 3 distinct troubleshooting.md sections the dashboard error states point at.
+      // Keep in sync with the ## headings in docs/troubleshooting.md — local-verify enforces it.
+      var TROUBLESHOOT_URL = 'https://github.com/DaftVino/sheetweaver-webapp/blob/main/docs/troubleshooting.md';
+      var TROUBLESHOOT_ANCHORS = {
+        setupLabelAuth:   'label-not-found-or-authorization-error-during-setup',
+        brokenConnection: 'broken-connection-gmail-label-or-sheet-tab-missing',
+        notProcessing:    'emails-are-not-being-processed'
+      };
+
+      // Returns an <a> circled-"?" link to a troubleshooting.md section.
+      // anchor: slug without '#'. stateLabel: human phrase for the accessible name (the "?" glyph has none).
+      function _troubleshootLink(anchor, stateLabel) {
+        const a = document.createElement('a');
+        a.className = 'troubleshoot-link';
+        a.href = TROUBLESHOOT_URL + '#' + anchor;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.textContent = '?';
+        a.setAttribute('aria-label', 'Troubleshoot: ' + stateLabel);
+        a.title = 'Troubleshoot: ' + stateLabel;
+        return a;
+      }
+
       function _renderSyncBanner(hasTrigger, hasOwnedConnections) {
         const bannerContainer = document.getElementById('syncBannerContainer');
         if (hasTrigger) {
@@ -1250,6 +1279,9 @@
             '<span><strong>⚠️ The Loom is Idle:</strong> start the loom for your background weaving to work.</span>' +
             '<button onclick="enableSync(this)" title="15-min Auto-Weave" style="padding: var(--space-2) var(--space-3); font-size: var(--font-sm);">Start the Loom</button>' +
             '</div>';
+          // Site 5: contextual "?" link on the idle (auto-sync off) banner.
+          bannerContainer.querySelector('.sync-banner span').appendChild(
+            _troubleshootLink(TROUBLESHOOT_ANCHORS.notProcessing, 'Auto-sync is off'));
         } else {
           bannerContainer.innerHTML = '';
         }
@@ -1378,6 +1410,10 @@
           tdGmail.innerHTML = conn.gmailActive
             ? statusIcon('link', 'Threaded')
             : statusIcon('unlink', 'Broken Connection - Label missing in Gmail', { style: 'color: var(--danger);' });
+          if (!conn.gmailActive) {
+            // Site 2: contextual "?" on a broken Gmail-label connection (owner only).
+            tdGmail.appendChild(_troubleshootLink(TROUBLESHOOT_ANCHORS.brokenConnection, 'Broken connection: Gmail label missing'));
+          }
         }
         tr.appendChild(tdGmail);
 
@@ -1398,6 +1434,8 @@
             tdSheet.innerHTML = statusIcon('lock', 'Private Sheet - You do not have access to view it, but the sync is active');
           } else if (!conn.sheetActive) {
             tdSheet.innerHTML = statusIcon('unlink', 'Broken Connection - Spreadsheet tab missing', { style: 'color: var(--danger);' });
+            // Site 3: contextual "?" on a broken sheet-tab connection (owner only).
+            tdSheet.appendChild(_troubleshootLink(TROUBLESHOOT_ANCHORS.brokenConnection, 'Broken connection: sheet tab missing'));
           } else {
             tdSheet.innerHTML = statusIcon('link', 'Threaded');
           }
@@ -1421,6 +1459,8 @@
           if (conn.lastRunStatus === 'error') {
             lastSyncTd.style.color = 'var(--danger)';
             lastSyncTd.title = conn.lastError || 'Error during sync';
+            // Site 4: contextual "?" on a sync run that errored.
+            lastSyncTd.appendChild(_troubleshootLink(TROUBLESHOOT_ANCHORS.notProcessing, 'Sync run errored'));
           } else if (conn.lastRunStatus === 'partial') {
             lastSyncTd.style.color = 'var(--warning-text)';
           }
@@ -1832,6 +1872,8 @@
           authBtn.onclick = function() { window.open(result.authUrl, '_blank', 'noopener'); };
           actionRow.appendChild(authBtn);
         }
+        // Site 1: contextual "?" on the setup label/authorization error panel.
+        actionRow.appendChild(_troubleshootLink(TROUBLESHOOT_ANCHORS.setupLabelAuth, 'Label not found or authorization error'));
         errorDiv.appendChild(actionRow);
 
         const statusLine = document.createElement('p');
