@@ -134,8 +134,24 @@ Verify the install path works end-to-end from zero for a new installer.
 
 ---
 
+## 10. Ambient Background (Loom E/F)
+
+Visual checks for the decorative background layers (ambient thread weave + dot-glow wave, v2.4.0). Run in a desktop browser after deploy; repeat theme-sensitive checks in all three themes.
+
+| # | Test | Expected |
+|---|------|----------|
+| 10.1 | Load any screen and watch for ~30 seconds | Faint threads draw between background dots, hold, then fade; steady-state density stays low (~2–3 threads); no visible jank |
+| 10.2 | Switch between all three themes | Threads and dots recolor to the new theme immediately (no held threads in the old theme's color) |
+| 10.3 | Navigate from a wizard step back to the dashboard | A single brighter-dot wave sweeps from top-center to the bottom, then fades; it does NOT replay on routine dashboard refreshes (rest/mend/delete) |
+| 10.4 | Enable the OS "reduce motion" setting and reload | No thread animation, no dot wave — static dot grid only |
+| 10.5 | Click and drag through background areas around the card | Background never intercepts clicks; all UI controls work normally |
+| 10.6 | Background the tab for 1+ minute, then return | Weave resumes smoothly — no burst of instantly-expiring threads, no threads stuck past their lifetime |
+| 10.7 | Resize the window continuously for a few seconds | No stutter; weave re-measures once the resize settles; no console errors (with canvas-blocking privacy extensions, the weave simply stays off) |
+
+---
+
 ## Pass Criteria
 
-All tests in sections 1–8 must pass before marking a deployment ready for general use. Section 9 must pass on each subsequent update.
+All tests in sections 1–8 must pass before marking a deployment ready for general use. Section 9 must pass on each subsequent update. Section 10 must pass on any release that changes `Index.html` visuals.
 
 Log any test failure with its report ID (where applicable) and the Apps Script Executions entry. Do not mark a phase complete based solely on local `npm run verify:local` — that gate verifies syntax and static invariants only; it cannot test OAuth, Gmail API, Sheets API, triggers, or multi-account behavior.
