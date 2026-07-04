@@ -9,7 +9,7 @@ Single-file Google Apps Script webapp. All HTML, CSS, and JS live in `Index.html
 - **Single file**: Index.html contains everything. There is no bundler, no module system, no imports. All JS functions are at one global scope.
 - **GAS quota**: Google Apps Script has a daily execution quota shared across all users. Never add a new on-load RPC — always piggyback metadata onto existing calls (see `getDashboardData()` pattern in Code.js).
 - **CSS token system**: All visual values use CSS custom properties (`var(--token-name)`). Never hardcode colors, spacing, or font sizes. Theme switching works via body class.
-- **z-index hierarchy**: `#statusToast` = 11000, `#debugCopiedToast` = 10500, `_showFallback` overlay = 9999. Decorative background layers (`#loomBackdrop`, `#threadCanvas`, `#dotWave`) sit at -1 with `pointer-events: none`. Don't break this stack.
+- **z-index hierarchy**: `#statusToast` = 11000, `#debugCopiedToast` = 10500, `_showFallback` overlay = 9999. Decorative background layers sit below content with `pointer-events: none`: `#loomBackdrop` = -2, `#threadCanvas`/`#dotWave` = -1. Don't break this stack.
 
 ## Testing
 
