@@ -22,6 +22,25 @@ The background became a loom.
 
 ### Changed
 - The success screen's "The Loom Is Strung!" title and subtitle are now centered.
+- The dashboard's glow wave now plays only when you arrive at the dashboard from a
+  wizard step — routine refreshes after pausing, mending, or deleting a connection
+  no longer replay it.
+- The weave is tuned to be genuinely idle between moments of motion: thread drawing
+  eases in and out, node pulses settle faster, and threads spawn a little less
+  often, so the animation loop truly sleeps most of the time and costs less battery.
+
+### Fixed
+- Switching themes now recolors held threads immediately instead of leaving them in
+  the previous theme's color for up to ten seconds.
+- Backgrounding the tab no longer fast-forwards or stalls the weave: thread timing
+  runs on a clamped internal clock, so returning to the app resumes threads smoothly
+  (no burst of instantly-expired threads, no threads held far past their lifetime).
+- Browsers that block canvas access (some privacy extensions) no longer hit an
+  error on every window resize — the weave simply stays off.
+- Continuous window resizing no longer stutters: the weave re-measures once the
+  resize settles instead of reallocating its canvas on every event.
+- The version shown in the app footer now matches the release version (it had
+  fallen behind), and the build now fails if the two ever drift again.
 
 ## [2.3.1] - 2026-07-03
 

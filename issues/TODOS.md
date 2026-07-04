@@ -1,5 +1,15 @@
 # TODOS
 
+## Loom E/F ambient background (2026-07-03)
+
+### Manual QA matrix for the ambient weave + dot-glow wave
+
+**Priority:** P1
+
+**What:** The visual/manual acceptance criteria for Loom E/F (v2.4.0) are still unverified on a live deployment: steady-state density ~2-3 threads (AC4/5), no jank at 4× CPU throttle / Moto-G class (AC8), 360px width (AC10), Safari private mode (AC12), rAF-idle performance trace (AC13), and the 3-themes × steps × reduced-motion-toggle sweep. The ship test plan artifact lives at `~/.gstack/projects/DaftVino-SheetWeaver-Webapp/jm3ak-feat-loom-ef-ambient-background-ship-test-plan-20260703-120000.md`.
+
+**Why:** Everything vm-testable is covered by `local-verify.js`, but animation aesthetics and real-device performance can only be judged in a browser. Deferred at ship time by explicit choice ("ship, QA after").
+
 ## Deferred from registry-sharding eng review (2026-07-03)
 
 ### Prune headerConfigs redundancy from connection records

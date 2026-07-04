@@ -1941,6 +1941,10 @@ const packageJson = parseJson('package.json');
 if (packageJson) {
   check('npm verify:local script is configured', packageJson.scripts && packageJson.scripts['verify:local'] === 'node scripts/local-verify.js');
   check('@google/clasp dev dependency is present', Boolean(packageJson.devDependencies && packageJson.devDependencies['@google/clasp']));
+  const appVersionMatch = read('Code.js').match(/const APP_VERSION = '([^']+)'/);
+  check('APP_VERSION in Code.js matches package.json version (version drift guard)',
+    !!appVersionMatch && appVersionMatch[1] === packageJson.version,
+    appVersionMatch ? `Code.js=${appVersionMatch[1]} package.json=${packageJson.version}` : 'APP_VERSION not found');
 }
 
 const codeSource = read('Code.js');
