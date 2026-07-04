@@ -1482,8 +1482,8 @@ function checkLoomEF(htmlSrc, scripts) {
   check('Loom E: defines idempotent teardown() and start()',
     /function teardown\s*\(/.test(eBody) && /function start\s*\(/.test(eBody));
   check('Loom E: uses a canvas 2D context', /getContext\(\s*['"]2d['"]\s*\)/.test(eBody));
-  check('Loom E: has the clamped animation clock (AC7) — tick() + wakeAfter() present',
-    /function tick\s*\(/.test(eBody) && /function wakeAfter\s*\(/.test(eBody));
+  check('Loom E: has the clamped animation clock (AC7) — tick() + capped sleep-credit present',
+    /function tick\s*\(/.test(eBody) && /sleepWall/.test(eBody) && /sleepCredit/.test(eBody));
   check('Loom E: draw-phase head progress is eased',
     /function ease\s*\(/.test(eBody) && /head = ease\(/.test(eBody));
   check('Loom E: applyTheme is wired to the weave theme hook',
@@ -1830,6 +1830,49 @@ function checkLoomEFBehavior(scripts) {
       pairsChecked === 5 && allSeedsOk, `pairs checked: ${pairsChecked}, invariant held: ${allSeedsOk}`);
   } catch (e) {
     failures.push('Loom E vm card avoidance: ' + e.message);
+  }
+
+  // Interrupted-sleep credit (adversarial finding, 2026-07-03): a wake that
+  // interrupts a hold-sleep must credit the wall time actually slept (capped
+  // at the scheduled interval), or every spawn/theme/resize wake silently
+  // discards hold time and threads hold far past their 10s. Observable: after
+  // sleeping D-scheduled, waking 3s in via the theme hook, and re-sleeping,
+  // the next wake timer must be scheduled ~3s sooner — not at ~D again.
+  try {
+    const t = makeLoomSandbox({});
+    vm.runInContext(eBody, t.ctx);
+    let guard = 0;
+    while (guard++ < 300) {
+      const before = t.S.rafCount;
+      t.S.now += 100;
+      t.S.rafCbs[t.S.rafCbs.length - 1]();
+      if (t.S.rafCount === before) break;       // asleep mid-hold
+    }
+    const firstWake = t.S.timers[t.S.timers.length - 1];
+    t.S.now += 3000;                             // 3s of real sleep, then an interrupting wake
+    t.sandbox.window._loomThemeChanged();        // wakes without spawning a thread
+    t.S.now += 16;
+    t.S.rafCbs[t.S.rafCbs.length - 1]();         // hold frame: inactive — sleeps again
+    const secondWake = t.S.timers[t.S.timers.length - 1];
+    const drop = firstWake.ms - secondWake.ms;
+    check('Loom E vm: a wake interrupting a hold-sleep credits the slept wall time (next wake ~3s sooner, not reset)',
+      drop > 2800 && drop < 3300, `first=${firstWake.ms}ms second=${secondWake.ms}ms drop=${drop}ms`);
+  } catch (e) {
+    failures.push('Loom E vm interrupted-sleep credit: ' + e.message);
+  }
+
+  // Reduced-motion resize guard (adversarial finding): with reduced-motion ON
+  // the feature is fully off — a debounced resize must not reallocate the canvas.
+  try {
+    const t = makeLoomSandbox({ reduced: true });
+    vm.runInContext(eBody, t.ctx);
+    t.sandbox.window.innerWidth = 500; t.sandbox.window.innerHeight = 400;
+    t.S.winListeners.resize();
+    t.S.timers[t.S.timers.length - 1].fn();      // fire the debounce
+    check('Loom E vm: reduced-motion blocks the debounced resize from touching the canvas',
+      t.canvas.width === 0);
+  } catch (e) {
+    failures.push('Loom E vm reduced resize guard: ' + e.message);
   }
 
   // Theme-change hook: applyTheme() calls window._loomThemeChanged so held

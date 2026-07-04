@@ -2951,7 +2951,7 @@
       // ~16ms, so returning to a hidden tab resumes in-flight threads smoothly
       // instead of instantly expiring them. The intentional hold/idle sleep
       // credits exactly its scheduled interval in wakeAfter().
-      var clock = 0, lastWall = null;
+      var clock = 0, lastWall = null, sleepWall = null, sleepCredit = 0;
       function tick() {
         var w = performance.now();
         if (lastWall === null) lastWall = w;
@@ -3076,23 +3076,30 @@
         if (active) { rafId = requestAnimationFrame(frame); return; }
         rafId = null; running = false;  // nothing changing — sleep, wake at the next fade
         var d = nextWakeDelay(now);
-        if (d !== Infinity) { clearTimeout(wakeTimer); wakeTimer = setTimeout(function () { wakeAfter(d + 16); }, d + 16); }
+        if (d !== Infinity) {
+          clearTimeout(wakeTimer);
+          sleepWall = performance.now(); sleepCredit = d + 16;
+          wakeTimer = setTimeout(wake, d + 16);
+        } else {
+          sleepWall = null; // idle sleep with no held threads — nothing to age
+        }
       }
       function wake() {
         if (running || reduced()) return;
         // A live loop supersedes any scheduled sleep-wake: kill the pending
-        // timer so a spawn/resize wake can't leave it to double-credit later.
+        // timer so it can't fire later and credit the same sleep twice.
         clearTimeout(wakeTimer); wakeTimer = null;
+        if (sleepWall !== null) {
+          // Credit the wall time actually slept, capped at the scheduled
+          // interval — never more (anti-fast-forward on throttled/hidden tabs,
+          // AC7), and never lost when a spawn/theme/resize wake interrupts the
+          // sleep early (holds would otherwise stretch past their 10s).
+          clock += Math.min(performance.now() - sleepWall, sleepCredit);
+          lastWall = performance.now();
+          sleepWall = null;
+        }
         running = true;
         rafId = requestAnimationFrame(frame);
-      }
-      function wakeAfter(credited) {
-        // Intentional hold/idle sleep: credit exactly the scheduled interval,
-        // never the (possibly throttled) wall time that actually passed, then
-        // resync the wall baseline — anti-fast-forward on hidden tabs (AC7).
-        if (running) return; // a spawn already woke the loop — the clock is live, never double-credit
-        clock += credited; lastWall = performance.now();
-        wake();
       }
 
       function scheduleSpawn() {
@@ -3110,15 +3117,17 @@
 
       function teardown() {
         if (rafId) cancelAnimationFrame(rafId);
-        clearTimeout(spawnTimer); clearTimeout(wakeTimer);
-        rafId = null; spawnTimer = null; wakeTimer = null; running = false;
-        threads = []; lastWall = null; // restart never credits time slept while torn down
+        clearTimeout(spawnTimer); clearTimeout(wakeTimer); clearTimeout(resizeTimer);
+        rafId = null; spawnTimer = null; wakeTimer = null; resizeTimer = null; running = false;
+        threads = []; lastWall = null; sleepWall = null; // restart never credits time slept while torn down
         if (ctx) ctx.clearRect(0, 0, vw, vh);
       }
       function start() {
         if (running || reduced()) return;
         resize(); readTheme();
-        try { threads.push(makeThread()); } catch (e) {} // seed thread is best-effort; the scheduler recovers
+        if (threads.length < E.concurrency) {
+          try { threads.push(makeThread()); } catch (e) {} // seed thread is best-effort; the scheduler recovers
+        }
         wake(); scheduleSpawn();
       }
 
@@ -3128,6 +3137,7 @@
         // and each resize() reallocates a multi-megapixel canvas backing store.
         clearTimeout(resizeTimer);
         resizeTimer = setTimeout(function () {
+          if (reduced()) return; // feature is fully off under reduced-motion — no canvas churn
           if (window.innerWidth === vw && window.innerHeight === vh &&
               Math.min(window.devicePixelRatio || 1, 2) === dpr) return;
           resize(); wake();
