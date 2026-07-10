@@ -1438,6 +1438,64 @@ function checkAdminUnauthorizedShape(codeSource) {
     `expected 2 unauthorized guards using {success:false,error:...}, found: ${JSON.stringify(matches)}`);
 }
 
+// ==========================================
+// Admin override on connection management: the admin may pause/delete any
+// user's connection (the dashboard renders those buttons for the admin only);
+// non-admins remain owner-scoped. getDashboardData piggybacks isCallerAdmin
+// so the client can gate the buttons without a new on-load RPC.
+// ==========================================
+function checkAdminConnectionOverride(codeSource) {
+  const victim = { id: 'adm-v', userEmail: 'victim@example.com', gmailLabel: 'L', tabName: 'V', spreadsheetUrl: 'https://x', isPaused: false };
+
+  try {
+    // Non-admin caller with no admin configured: rejected, shard untouched.
+    let propStore = { 'capture_conn_adm-v': JSON.stringify(victim) };
+    let ctx = makeShardedContext({ propStore, activeEmail: 'intruder@example.com' });
+    vm.runInContext(codeSource, ctx);
+    let res = vm.runInContext("deleteConnection('V', 'https://x')", ctx);
+    check('deleteConnection still rejects a non-admin deleting another user\'s connection',
+      res && res.success === false && res.error === 'Not authorized.' &&
+      propStore['capture_conn_adm-v'] === JSON.stringify(victim));
+
+    // Non-admin caller when an admin IS configured (but isn't the caller).
+    propStore = { 'capture_conn_adm-v': JSON.stringify(victim), admin_email: 'admin@example.com' };
+    ctx = makeShardedContext({ propStore, activeEmail: 'intruder@example.com' });
+    vm.runInContext(codeSource, ctx);
+    res = vm.runInContext("togglePauseConnection('V', 'https://x')", ctx);
+    check('togglePauseConnection still rejects a non-admin pausing another user\'s connection',
+      res && res.success === false && res.error === 'Not authorized.' &&
+      JSON.parse(propStore['capture_conn_adm-v']).isPaused === false);
+
+    // Admin caller: delete of another user's connection succeeds, shard removed.
+    propStore = { 'capture_conn_adm-v': JSON.stringify(victim), admin_email: 'admin@example.com' };
+    ctx = makeShardedContext({ propStore, activeEmail: 'admin@example.com' });
+    vm.runInContext(codeSource, ctx);
+    res = vm.runInContext("deleteConnection('V', 'https://x')", ctx);
+    check('deleteConnection lets the admin delete another user\'s connection',
+      res && res.success === true && propStore['capture_conn_adm-v'] === undefined);
+
+    // Admin caller: pause toggle on another user's connection succeeds.
+    propStore = { 'capture_conn_adm-v': JSON.stringify(victim), admin_email: 'admin@example.com' };
+    ctx = makeShardedContext({ propStore, activeEmail: 'admin@example.com' });
+    vm.runInContext(codeSource, ctx);
+    res = vm.runInContext("togglePauseConnection('V', 'https://x')", ctx);
+    check('togglePauseConnection lets the admin pause another user\'s connection',
+      res && res.success === true && JSON.parse(propStore['capture_conn_adm-v']).isPaused === true);
+
+    // getDashboardData piggybacks the caller's admin state.
+    ctx = makeShardedContext({ propStore: { 'capture_conn_adm-v': JSON.stringify(victim), admin_email: 'admin@example.com' }, activeEmail: 'admin@example.com' });
+    vm.runInContext(codeSource, ctx);
+    let data = vm.runInContext('getDashboardData()', ctx);
+    check('getDashboardData reports isCallerAdmin:true for the admin', data && data.isCallerAdmin === true);
+    ctx = makeShardedContext({ propStore: { 'capture_conn_adm-v': JSON.stringify(victim), admin_email: 'admin@example.com' }, activeEmail: 'someone@example.com' });
+    vm.runInContext(codeSource, ctx);
+    data = vm.runInContext('getDashboardData()', ctx);
+    check('getDashboardData reports isCallerAdmin:false for a non-admin', data && data.isCallerAdmin === false);
+  } catch (e) {
+    failures.push('admin connection override: ' + e.message);
+  }
+}
+
 function checkPhase4Helpers(htmlSrc) {
   // Verify no user-data values appear inside onclick= attribute strings
   // These patterns were the stored-XSS vectors before Phase 4
@@ -1989,6 +2047,7 @@ checkWritePathEntryPoints(codeSource);
 checkPhase3Helpers(codeSource);
 checkIsAdmin(codeSource);
 checkAdminUnauthorizedShape(codeSource);
+checkAdminConnectionOverride(codeSource);
 checkRegistryOwnership(codeSource);
 checkReadEntryPointMigration(codeSource);
 checkLoomBHelpers(codeSource);
@@ -2007,6 +2066,13 @@ checkLoomEF(htmlSource, inlineScripts);
 checkLoomEFBehavior(inlineScripts);
 checkLocalStorageConvention(htmlSource);
 checkTargetUrlFormatValidation(htmlSource);
+
+// Admin override (client side): non-owner Rest/Delete buttons are admin-gated,
+// driven by the isCallerAdmin flag piggybacked on getDashboardData.
+check('dashboard stores _isCallerAdmin from the getDashboardData payload',
+  /_isCallerAdmin\s*=\s*!!data\.isCallerAdmin/.test(htmlSource));
+check('non-owner action buttons are gated on _isCallerAdmin',
+  htmlSource.includes('if (_isCallerAdmin)'));
 
 // Phase 4 (branding): branding presence checks
 check('Phase 4 (branding): Index.html contains app-logo img', htmlSource.includes('class="app-logo"'));

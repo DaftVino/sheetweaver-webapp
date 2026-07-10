@@ -405,6 +405,20 @@ function _connMatches(conn, email, tabName, url) {
   return conn.userEmail === email && conn.tabName === tabName && conn.spreadsheetUrl === url;
 }
 
+// Owner-scoped lookup with an admin override: the admin may pause/delete any
+// user's connection. The fallback lookup by (tabName, spreadsheetUrl) alone is
+// safe because that pair is unique across users — setupSpreadsheet rejects a
+// second user claiming an existing pair — so the admin can never grab a
+// different connection than the row they clicked. repairConnection and
+// getEditConfig stay owner-only on purpose: both operate on the caller's own
+// Gmail labels, which have no meaning for another user's connection.
+function _findConnForCaller(registry, activeEmail, tabName, url) {
+  const own = registry.find(c => _connMatches(c, activeEmail, tabName, url));
+  if (own) return own;
+  if (!isAdmin(activeEmail)) return null;
+  return registry.find(c => c.tabName === tabName && c.spreadsheetUrl === url) || null;
+}
+
 function _writeConnection(props, conn) {
   if (!conn.id) {
     // Ship pre-landing review (Claude adversarial subagent): a legacy blob
@@ -689,7 +703,9 @@ function getDashboardData() {
 
   const hasTrigger = checkUserTrigger();
   const totalRowsWoven = _getIntProp(props, LOOM_TOTAL_ROWS_KEY);
-  return { connections: connections, activeEmail: email, hasTrigger: hasTrigger, appVersion: APP_VERSION, totalRowsWoven: totalRowsWoven, triggerIntervalMinutes: TRIGGER_INTERVAL_MINUTES };
+  // isCallerAdmin is piggybacked here (per the no-new-on-load-RPC rule) so the
+  // dashboard can show pause/delete on non-owned rows to the admin only.
+  return { connections: connections, activeEmail: email, hasTrigger: hasTrigger, appVersion: APP_VERSION, totalRowsWoven: totalRowsWoven, triggerIntervalMinutes: TRIGGER_INTERVAL_MINUTES, isCallerAdmin: isAdmin(email) };
   } catch(e) {
     logDiag('ERROR', 'getDashboardData', { errorClass: e.name, message: e.message });
     throw e;
@@ -704,16 +720,21 @@ function togglePauseConnection(tabName, url) {
     if (migRetry) return migRetry;
     const lock = LockService.getScriptLock();
     if (!lock.tryLock(5000)) return { success: false, error: 'Could not acquire lock.' };
+    let adminOverrideTarget = null;
     try {
       const registry = _readRegistry(props);
-      const conn = registry.find(c => _connMatches(c, activeEmail, tabName, url));
+      const conn = _findConnForCaller(registry, activeEmail, tabName, url);
       if (!conn) return { success: false, error: 'Not authorized.' };
+      if (conn.userEmail !== activeEmail) adminOverrideTarget = conn.userEmail;
       conn.isPaused = !conn.isPaused;
       _writeConnection(props, conn);
     } finally {
       lock.releaseLock();
       _flushCorruptShardLogs();
     }
+    // Audit trail for admin actions on someone else's connection. Logged
+    // outside the lock: logDiag acquires the same script lock internally.
+    if (adminOverrideTarget) logDiag('INFO', 'togglePauseConnection:adminOverride', { targetUser: adminOverrideTarget, tabName: tabName });
 
     try {
       const ss = SpreadsheetApp.openByUrl(url);
@@ -746,15 +767,20 @@ function deleteConnection(tabName, url) {
     if (migRetry) return migRetry;
     const lock = LockService.getScriptLock();
     if (!lock.tryLock(5000)) return { success: false, error: 'Could not acquire lock.' };
+    let adminOverrideTarget = null;
     try {
       const registry = _readRegistry(props);
-      const conn = registry.find(c => _connMatches(c, activeEmail, tabName, url));
+      const conn = _findConnForCaller(registry, activeEmail, tabName, url);
       if (!conn) return { success: false, error: 'Not authorized.' };
+      if (conn.userEmail !== activeEmail) adminOverrideTarget = conn.userEmail;
       _deleteConnectionShard(props, conn);
     } finally {
       lock.releaseLock();
       _flushCorruptShardLogs();
     }
+    // Audit trail for admin actions on someone else's connection. Logged
+    // outside the lock: logDiag acquires the same script lock internally.
+    if (adminOverrideTarget) logDiag('INFO', 'deleteConnection:adminOverride', { targetUser: adminOverrideTarget, tabName: tabName });
 
     try {
       const ss = SpreadsheetApp.openByUrl(url);

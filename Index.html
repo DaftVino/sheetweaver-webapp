@@ -1388,6 +1388,12 @@
         el.style.display = 'flex';
       }
 
+      // Set from getDashboardData's isCallerAdmin before rows render. Gates the
+      // pause/delete buttons on non-owned rows: the server only honors those
+      // actions for the owner or the admin, so showing them to everyone just
+      // produced a guaranteed "Not authorized." toast.
+      let _isCallerAdmin = false;
+
       function _buildConnectionRow(conn) {
         const tr = document.createElement('tr');
         const hasAlert = conn.isOwner && (!conn.gmailActive || !conn.sheetActive || conn.accessDenied);
@@ -1508,8 +1514,17 @@
         const pauseLabel = conn.isPaused ? 'Weave On' : 'Rest';
         const pauseTooltip = conn.isPaused ? 'Resume weaving' : 'Pause weaving';
         if (!conn.isOwner) {
-          tdActions.appendChild(_makeActionBtn(pauseLabel, '', pauseTooltip + ' ' + conn.tabName, function() { togglePause(conn.tabName, conn.spreadsheetUrl, tr); }, pauseTooltip));
-          tdActions.appendChild(_makeActionBtn('Delete', 'danger', 'Delete ' + conn.tabName, function() { deleteConn(conn.tabName, conn.spreadsheetUrl); }));
+          if (_isCallerAdmin) {
+            tdActions.appendChild(_makeActionBtn(pauseLabel, '', pauseTooltip + ' ' + conn.tabName, function() { togglePause(conn.tabName, conn.spreadsheetUrl, tr); }, pauseTooltip));
+            tdActions.appendChild(_makeActionBtn('Delete', 'danger', 'Delete ' + conn.tabName, function() { deleteConn(conn.tabName, conn.spreadsheetUrl); }));
+          } else {
+            const managed = document.createElement('span');
+            managed.style.color = 'var(--text-muted)';
+            managed.style.fontSize = 'var(--font-xs)';
+            managed.title = 'Managed by ' + conn.userEmail;
+            managed.textContent = '—';
+            tdActions.appendChild(managed);
+          }
         } else if (conn.accessDenied) {
           tdActions.appendChild(_makeActionBtn(pauseLabel, '', pauseTooltip + ' ' + conn.tabName, function() { togglePause(conn.tabName, conn.spreadsheetUrl, tr); }, pauseTooltip));
           tdActions.appendChild(_makeActionBtn('Delete', 'danger', 'Delete ' + conn.tabName, function() { deleteConn(conn.tabName, conn.spreadsheetUrl); }));
@@ -1555,6 +1570,7 @@
           })
           .withSuccessHandler(function(data) {
             document.getElementById('activeEmail').innerText = data.activeEmail;
+            _isCallerAdmin = !!data.isCallerAdmin;
             const vl = document.getElementById('versionLabel');
             if (vl && data.appVersion) { vl.textContent = 'v' + data.appVersion; vl.setAttribute('aria-label', 'App version: v' + data.appVersion); }
             const hasOwnedConnections = data.connections.some(c => c.isOwner && !c.isPaused);
