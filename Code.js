@@ -1,4 +1,4 @@
-const APP_VERSION = '2.4.0';
+const APP_VERSION = '2.4.1';
 
 const DEFAULT_SPREADSHEET_URL = '';
 const USER_DEFAULT_SPREADSHEET_URL_KEY = 'user_default_spreadsheet_url';
@@ -1032,7 +1032,13 @@ function setupSpreadsheet(labelName, tabName, targetUrl, headerConfigs, initialS
     const migRetry = _migrateOrRetryError(props);
     if (migRetry) return migRetry;
 
-    const ss = SpreadsheetApp.openByUrl(targetUrl);
+    let ss;
+    try {
+      ss = SpreadsheetApp.openByUrl(targetUrl);
+    } catch (e) {
+      const reportId = logDiag('WARN', 'setupSpreadsheet:badUrl', { errorClass: e.name, message: e.message, labelName: labelName, tabName: tabName });
+      return { success: false, error: 'That Google Sheet URL could not be opened. Paste the full URL from the sheet\'s address bar (it should contain /spreadsheets/d/...), and make sure you have edit access.', reportId: reportId };
+    }
 
     // GS-A/GS-B: Persist the user's default URL only AFTER openByUrl succeeds,
     // and only when this is a normal save (not a repair).

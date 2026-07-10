@@ -1396,6 +1396,38 @@ function checkLocalStorageConvention(htmlSrc) {
     `found ${directCalls} localStorage.getItem/setItem call(s), expected ${wrapperDefinitions} (inside the wrapper definitions only)`);
 }
 
+// GS-C (bad-URL fix): setupSpreadsheet's save handler adds a format check on
+// top of the existing non-empty check, so a Drive file link or a bare
+// spreadsheet id gets caught client-side with a friendly inline error before
+// ever reaching the server (which now also reclassifies a bad openByUrl to
+// WARN — see Code.js:setupSpreadsheet). The regex also accepts Google's
+// account-scoped `/u/N/` URLs (secondary-account sessions, routine for this
+// Gmail-integration app).
+//
+// The behavioral assertions below run against `urlFormatPattern`, a
+// hand-typed duplicate of the implementation regex — NOT one extracted from
+// htmlSrc. The literal-presence check is the single source of truth: it
+// asserts the exact regex literal string appears in Index.html, and
+// `regexLiteral` and `urlFormatPattern` are written to be byte-for-byte the
+// same pattern, so a maintainer who changes one must change all three
+// together or this check fails.
+function checkTargetUrlFormatValidation(htmlSrc) {
+  const regexLiteral = '/\\/spreadsheets\\/(u\\/\\d+\\/)?d\\/[A-Za-z0-9_-]+/';
+  check('Index.html save handler defines the targetUrl format-check regex',
+    htmlSrc.indexOf(regexLiteral) !== -1,
+    `expected to find literal ${regexLiteral} in Index.html`);
+
+  const urlFormatPattern = /\/spreadsheets\/(u\/\d+\/)?d\/[A-Za-z0-9_-]+/;
+  check('targetUrl format regex rejects a Drive file link',
+    !urlFormatPattern.test('https://drive.google.com/file/d/1abc/view'));
+  check('targetUrl format regex rejects a bare spreadsheet id with no URL structure',
+    !urlFormatPattern.test('1o_0D5JwtkmEOSLugtsewKdavqhmi4s55uCXIseqvfWE'));
+  check('targetUrl format regex accepts a real Sheets edit URL',
+    urlFormatPattern.test('https://docs.google.com/spreadsheets/d/1o_0D5JwtkmEOSLugtsewKdavqhmi4s55uCXIseqvfWE/edit#gid=0'));
+  check('targetUrl format regex accepts an account-scoped (/u/N/) Sheets URL',
+    urlFormatPattern.test('https://docs.google.com/spreadsheets/u/0/d/1o_0D5JwtkmEOSLugtsewKdavqhmi4s55uCXIseqvfWE/edit'));
+}
+
 function checkAdminUnauthorizedShape(codeSource) {
   // loadAdminPanel (Index.html) branches on `.success === false`, not the old
   // `{authorized: false}` shape — a regression here silently breaks the admin panel.
@@ -1974,6 +2006,7 @@ checkWeaveTeardownSplit(htmlSource);
 checkLoomEF(htmlSource, inlineScripts);
 checkLoomEFBehavior(inlineScripts);
 checkLocalStorageConvention(htmlSource);
+checkTargetUrlFormatValidation(htmlSource);
 
 // Phase 4 (branding): branding presence checks
 check('Phase 4 (branding): Index.html contains app-logo img', htmlSource.includes('class="app-logo"'));

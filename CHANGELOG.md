@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.1] - 2026-07-10
+
+### Fixed
+- Pasting a bad Google Sheet URL when adding a connection no longer records a
+  system-level `ERROR` in the admin diagnostics. `setupSpreadsheet` now catches a
+  failed `SpreadsheetApp.openByUrl` on user-entered input, logs it at `WARN`
+  (`setupSpreadsheet:badUrl`), and returns a plain-language message telling the
+  user to paste the full `/spreadsheets/d/...` URL and check edit access. Genuine
+  faults later in the save (lock, write, trigger) still log at `ERROR`.
+- The connection form now checks the URL shape before it ever reaches the server:
+  a Drive file link or a bare id is caught inline, while account-scoped
+  `/spreadsheets/u/N/d/...` URLs (secondary-account sessions) are accepted.
+
 ## [2.4.0] - 2026-07-03
 
 The background became a loom.

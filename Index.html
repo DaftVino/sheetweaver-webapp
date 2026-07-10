@@ -2528,6 +2528,12 @@
           btn.innerText = "Accept & Weave Into Tab";
           btn.disabled = false;
           return;
+        } else if (!/\/spreadsheets\/(u\/\d+\/)?d\/[A-Za-z0-9_-]+/.test(finalTargetUrl)) {
+          if (urlErrEl) { urlErrEl.textContent = 'That does not look like a Google Sheet URL. It should contain /spreadsheets/d/...'; urlErrEl.classList.add('visible'); }
+          urlInput && urlInput.focus();
+          btn.innerText = "Accept & Weave Into Tab";
+          btn.disabled = false;
+          return;
         } else {
           if (urlErrEl) urlErrEl.classList.remove('visible');
         }
