@@ -426,6 +426,59 @@ function checkMigrationFailureVisibility(codeSource) {
 }
 
 // ==========================================
+// Update-check semver comparison: the admin "Update available" banner must only
+// fire when the published release is strictly NEWER than the running build.
+// Regression guard for the "Update available: v2.0.5 — you have v2.4.1" bug,
+// where equality-only comparison flagged an OLDER release as an update.
+// ==========================================
+function checkUpdateCheckSemver(codeSource) {
+  try {
+    const ctx = makeShardedContext({});
+    vm.runInContext(codeSource, ctx);
+    const cmp = expr => vm.runInContext(expr, ctx);
+    check('_compareSemver: numeric (not lexical) minor order — 2.10.0 > 2.9.0',
+      cmp("_compareSemver('2.10.0','2.9.0')") === 1);
+    check('_compareSemver: equal versions compare as 0',
+      cmp("_compareSemver('2.4.1','2.4.1')") === 0);
+    check('_compareSemver: the production bug — 2.0.5 < 2.4.1 (older release is NOT an update)',
+      cmp("_compareSemver('2.0.5','2.4.1')") === -1);
+    check('_compareSemver: missing segment defaults to 0 — 2.4 < 2.4.1',
+      cmp("_compareSemver('2.4','2.4.1')") === -1);
+    check('_compareSemver: leading v is stripped — v2.4.1 == 2.4.1',
+      cmp("_compareSemver('v2.4.1','2.4.1')") === 0);
+    check('_compareSemver: malformed tag is deterministic and non-throwing (fails safe as older)',
+      cmp("_compareSemver('release-x','2.4.1')") === -1);
+    check('_compareSemver: pre-release suffix on a segment is stripped — 2.5.0-beta == 2.5.0',
+      cmp("_compareSemver('2.5.0-beta','2.5.0')") === 0);
+  } catch (e) {
+    failures.push('_compareSemver: ' + e.message);
+  }
+
+  // Stale cache must not defeat the fix: checkForUpdates() returns the cached
+  // result inside the 7-day TTL window, but must RECOMPUTE upToDate against the
+  // live APP_VERSION rather than trusting the frozen cached boolean.
+  try {
+    const propStore = {
+      admin_email: 'admin@example.com',
+      update_check_ts: String(Date.now()), // inside TTL — forces the cache path
+      update_check_result: JSON.stringify({
+        upToDate: false, latestVersion: '2.0.5', currentVersion: '2.0.5'
+      })
+    };
+    const ctx = makeShardedContext({ propStore, activeEmail: 'admin@example.com' });
+    vm.runInContext(codeSource, ctx);
+    const result = vm.runInContext('checkForUpdates()', ctx);
+    const appVersion = vm.runInContext('APP_VERSION', ctx);
+    check('checkForUpdates recomputes upToDate from live APP_VERSION on a stale cache hit',
+      !!result && result.upToDate === true);
+    check('checkForUpdates refreshes currentVersion to the live APP_VERSION on a cache hit',
+      !!result && result.currentVersion === appVersion);
+  } catch (e) {
+    failures.push('checkForUpdates stale-cache recompute: ' + e.message);
+  }
+}
+
+// ==========================================
 // Write-path entry points: migration gating, own-lock failure shapes,
 // shard write isolation, size guard, id-threaded edit flow
 // ==========================================
@@ -2043,6 +2096,7 @@ checkPureHelpers(codeSource);
 checkRegistryHelpers(codeSource);
 checkMigration(codeSource);
 checkMigrationFailureVisibility(codeSource);
+checkUpdateCheckSemver(codeSource);
 checkWritePathEntryPoints(codeSource);
 checkPhase3Helpers(codeSource);
 checkIsAdmin(codeSource);
@@ -2085,6 +2139,20 @@ check('Phase 1: Index.html has Copy Debug button', htmlSource.includes('id="copy
 check('Phase 1: Index.html defines copyDebugInfo function', htmlSource.includes('function copyDebugInfo('));
 check('Phase 1: Index.html defines _logFailure helper', htmlSource.includes('function _logFailure('));
 check('Phase 1: Index.html has client debug buffer', htmlSource.includes('const _dbg = '));
+
+// Collapsible admin panel: default-collapsed body, real toggle button with the
+// aria-expanded/aria-controls disclosure contract, and a header badges region.
+check('Admin panel: collapsible body wrapper is hidden by default',
+  /id="adminPanelBody"[^>]*\bhidden\b/.test(htmlSource));
+check('Admin panel: toggle is a real button with aria-expanded="false"',
+  /id="adminPanelToggle"[\s\S]*?aria-expanded="false"/.test(htmlSource));
+check('Admin panel: toggle controls the body via aria-controls',
+  /id="adminPanelToggle"[\s\S]*?aria-controls="adminPanelBody"/.test(htmlSource));
+check('Admin panel: header has a badges indicator region', htmlSource.includes('id="adminPanelBadges"'));
+check('Admin panel: defines toggleAdminPanel function', htmlSource.includes('function toggleAdminPanel('));
+check('Admin panel: defines _renderAdminBadges function', htmlSource.includes('function _renderAdminBadges('));
+check('Admin panel: update badge mirrors the banner hide condition (no badge on error)',
+  htmlSource.includes('!result.error && result.latestVersion && !result.upToDate'));
 
 // Phase 5: contextual "?" troubleshooting links. The anchors live in the
 // TROUBLESHOOT_ANCHORS map in Index.html (NOT as literal troubleshooting.md#slug

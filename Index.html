@@ -544,6 +544,19 @@
       .admin-panel { margin-top: var(--space-8); border-top: 2px solid var(--border); padding-top: var(--space-5); }
       .admin-panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-3); }
       .admin-panel-title { font-size: var(--font-xs); color: var(--text-muted); text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px; margin: 0; }
+      .admin-panel-toggle { display: inline-flex; align-items: center; gap: var(--space-2); background: none; border: none; padding: var(--space-1) 0; margin: 0; cursor: pointer; color: inherit; font: inherit; text-transform: inherit; letter-spacing: inherit; }
+      .admin-panel-toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: var(--radius-sm); }
+      .admin-toggle-chevron { display: inline-block; font-size: var(--font-xs); transition: transform 180ms ease; }
+      .admin-panel-toggle[aria-expanded="true"] .admin-toggle-chevron { transform: rotate(90deg); }
+      .admin-panel-actions { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; margin-bottom: var(--space-3); }
+      .admin-panel-badges { display: inline-flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
+      .admin-badge { display: inline-flex; align-items: center; gap: var(--space-1); border-radius: var(--radius-sm); padding: 2px var(--space-2); font-size: var(--font-xs); font-weight: bold; line-height: 1.4; border: 1px solid transparent; }
+      .admin-badge-count { font-variant-numeric: tabular-nums; }
+      .admin-badge-error   { background: var(--danger-bg); color: var(--danger); border-color: var(--danger); }
+      .admin-badge-warn    { background: var(--warning-bg); color: var(--warning-text); border-color: var(--warning-border); }
+      .admin-badge-storage { background: var(--warning-bg); color: var(--warning-text); border-color: var(--warning-border); }
+      .admin-badge-update  { background: var(--primary-soft); color: var(--primary-soft-text); border-color: var(--primary); }
+      .admin-badge-ok      { color: var(--text-muted); font-weight: normal; }
       .admin-btn { display: inline-flex; align-items: center; line-height: 1; border-radius: var(--radius-sm); padding: var(--space-1) var(--space-3); font-size: var(--font-xs); }
       .admin-diag-table { font-size: var(--font-xs); }
       .admin-diag-table td { word-break: break-all; max-width: 300px; }
@@ -821,16 +834,24 @@
 
         <div id="adminPanel" style="display:none;" class="admin-panel">
           <div class="admin-panel-header">
-            <h3 class="admin-panel-title">Admin Diagnostics</h3>
-            <div style="display:flex; gap: var(--space-2); align-items:center; flex-wrap:wrap;">
+            <h3 class="admin-panel-title">
+              <button type="button" id="adminPanelToggle" class="admin-panel-toggle" aria-expanded="false" aria-controls="adminPanelBody" onclick="toggleAdminPanel()">
+                <span class="admin-toggle-chevron" aria-hidden="true">&#9656;</span>
+                <span>Admin Diagnostics</span>
+              </button>
+            </h3>
+            <div id="adminPanelBadges" class="admin-panel-badges" aria-live="polite"></div>
+          </div>
+          <div id="adminPanelBody" hidden>
+            <div class="admin-panel-actions">
               <a href="https://github.com/DaftVino/sheetweaver-webapp/issues/new/choose" target="_blank" rel="noopener" class="secondary-btn admin-btn" style="margin:0; text-decoration:none;">Report a Bug</a>
               <button class="admin-btn secondary-btn" onclick="refreshAdminDiagnostics()" style="margin:0;">Refresh</button>
               <button class="admin-btn" style="background:var(--danger); margin:0;" onclick="clearDiagnostics()">Clear All</button>
             </div>
+            <div id="adminUpdateBanner" style="display:none;"></div>
+            <div id="adminRegistryHealth"></div>
+            <div id="adminDiagEvents" style="margin-top: var(--space-3);"></div>
           </div>
-          <div id="adminUpdateBanner" style="display:none;"></div>
-          <div id="adminRegistryHealth"></div>
-          <div id="adminDiagEvents" style="margin-top: var(--space-3);"></div>
         </div>
       </div>
 
@@ -2613,13 +2634,69 @@
       // ==========================================
       // ADMIN PANEL
       // ==========================================
+
+      // Collapsed-header indicator state. Error/warning/storage come from the
+      // synchronous getAdminDiagnostics() payload; `update` arrives later from
+      // the separate checkForUpdates() RPC. Every setter re-renders from this
+      // single object, so re-renders are idempotent (refreshAdminDiagnostics
+      // runs on every dashboard load).
+      var _adminBadges = { errors: 0, warnings: 0, storagePct: 0, update: false };
+
+      function _renderAdminBadges() {
+        const box = document.getElementById('adminPanelBadges');
+        if (!box) return;
+        box.innerHTML = '';
+        function badge(cls, icon, count, label) {
+          const b = document.createElement('span');
+          b.className = 'admin-badge ' + cls;
+          b.setAttribute('aria-label', label);
+          const ic = document.createElement('span');
+          ic.setAttribute('aria-hidden', 'true');
+          ic.textContent = icon;
+          b.appendChild(ic);
+          if (count != null) {
+            const n = document.createElement('span');
+            n.className = 'admin-badge-count';
+            n.textContent = count;
+            b.appendChild(n);
+          }
+          box.appendChild(b);
+        }
+        const s = _adminBadges;
+        if (s.errors > 0) badge('admin-badge-error', '⛔', s.errors, s.errors + (s.errors === 1 ? ' error logged' : ' errors logged'));
+        if (s.warnings > 0) badge('admin-badge-warn', '⚠️', s.warnings, s.warnings + (s.warnings === 1 ? ' warning logged' : ' warnings logged'));
+        if (s.storagePct >= 90) badge('admin-badge-storage', '📦', s.storagePct + '%', 'storage at ' + s.storagePct + ' percent of quota');
+        if (s.update) badge('admin-badge-update', '⬆️', null, 'update available');
+        if (s.errors === 0 && s.warnings === 0 && s.storagePct < 90 && !s.update) {
+          const ok = document.createElement('span');
+          ok.className = 'admin-badge admin-badge-ok';
+          ok.textContent = 'All clear';
+          box.appendChild(ok);
+        }
+      }
+
+      function toggleAdminPanel() {
+        const body = document.getElementById('adminPanelBody');
+        const btn = document.getElementById('adminPanelToggle');
+        if (!body || !btn) return;
+        const expanded = btn.getAttribute('aria-expanded') === 'true';
+        btn.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+        if (expanded) body.setAttribute('hidden', ''); else body.removeAttribute('hidden');
+      }
+
       function checkForUpdatesBanner() {
         const bannerDiv = document.getElementById('adminUpdateBanner');
         if (!bannerDiv) return;
         google.script.run
-          .withFailureHandler(function() { bannerDiv.style.display = 'none'; })
+          .withFailureHandler(function() { bannerDiv.style.display = 'none'; _adminBadges.update = false; _renderAdminBadges(); })
           .withSuccessHandler(function(result) {
             bannerDiv.innerHTML = '';
+            // Mirror the banner's own hide condition exactly: a real update is
+            // only "available" when the fetch succeeded, returned a version, and
+            // the running build is behind. An error/backoff result (upToDate
+            // undefined) must never light the update badge.
+            _adminBadges.update = !!(result && !result.error && result.latestVersion && !result.upToDate);
+            _renderAdminBadges();
             if (!result || result.error || !result.latestVersion || result.upToDate) {
               bannerDiv.style.display = 'none';
               return;
@@ -2663,6 +2740,19 @@
           return;
         }
         panel.style.display = 'block';
+
+        // Header indicators from the already-fetched diagnostics payload (no
+        // extra RPC). ERROR-level events already include migration write
+        // failures (logged as ERROR at the server), so counting by level is
+        // complete and does not double-count them.
+        const evs = diagData.events || [];
+        _adminBadges.errors = evs.filter(function(e) { return e.level === 'ERROR'; }).length;
+        _adminBadges.warnings = evs.filter(function(e) { return e.level === 'WARN'; }).length;
+        const rh = diagData.registryHealth || {};
+        function _pct(used, cap) { return (cap > 0 && isFinite(used)) ? Math.round((used / cap) * 100) : 0; }
+        _adminBadges.storagePct = Math.max(_pct(rh.largestConnBytes, rh.perConnCap), _pct(rh.totalStoreBytes, rh.totalStoreCap));
+        _renderAdminBadges();
+
         checkForUpdatesBanner();
 
         const h = diagData.registryHealth;

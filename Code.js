@@ -1,4 +1,4 @@
-const APP_VERSION = '2.4.1';
+const APP_VERSION = '2.5.0';
 
 const DEFAULT_SPREADSHEET_URL = '';
 const USER_DEFAULT_SPREADSHEET_URL_KEY = 'user_default_spreadsheet_url';
@@ -258,6 +258,28 @@ function getDebugSnapshot() {
 
 const UPDATE_CHECK_ERROR_BACKOFF_MS = 60 * 60 * 1000; // 1-hour backoff on fetch errors
 
+// Compare two dotted version strings numerically. Strips a leading 'v' and any
+// pre-release suffix (everything from the first non-digit within a segment).
+// Missing or non-numeric segments count as 0. Returns -1 (a<b), 0 (a==b),
+// 1 (a>b). A tag with no valid numeric parts sorts as 0.0.0, so a garbage
+// release tag can never make the running build look "behind".
+function _compareSemver(a, b) {
+  function parts(v) {
+    return String(v == null ? '' : v).replace(/^v/i, '').split('.').map(function(seg) {
+      const m = /^\d+/.exec(seg); // leading digits only: 'release' -> 0, '2beta' -> 2
+      return m ? parseInt(m[0], 10) : 0;
+    });
+  }
+  const pa = parts(a), pb = parts(b);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const x = pa[i] || 0, y = pb[i] || 0;
+    if (x > y) return 1;
+    if (x < y) return -1;
+  }
+  return 0;
+}
+
 function checkForUpdates() {
   const caller = getActiveEmail();
   if (!isAdmin(caller)) return { success: false, error: 'Not authorized.' };
@@ -267,6 +289,14 @@ function checkForUpdates() {
   if (now - cachedTs < UPDATE_CHECK_TTL_MS) {
     try {
       const cached = JSON.parse(props.getProperty(UPDATE_CHECK_RESULT_KEY) || 'null');
+      if (cached && cached.latestVersion) {
+        // Recompute against the LIVE APP_VERSION. The cached object froze both
+        // upToDate and currentVersion at write time; after a deploy (or a stale
+        // pre-fix cache) that boolean can be wrong, so never trust it verbatim.
+        cached.currentVersion = APP_VERSION;
+        cached.upToDate = _compareSemver(cached.latestVersion, APP_VERSION.replace(/^v/, '')) <= 0;
+        return cached;
+      }
       if (cached) return cached;
     } catch(e) {}
     // Inside TTL window but no valid cached result means backoff is active — skip live fetch.
@@ -284,7 +314,7 @@ function checkForUpdates() {
     if (!latestTag) return { error: true }; // draft/tagless release — skip caching
     const currentTag = APP_VERSION.replace(/^v/, '');
     const result = {
-      upToDate: latestTag === currentTag,
+      upToDate: _compareSemver(latestTag, currentTag) <= 0,
       currentVersion: APP_VERSION,
       latestVersion: latestTag,
       releaseUrl: data.html_url || null,
