@@ -4,6 +4,32 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0] - 2026-07-14
+
+### Added
+- The admin diagnostics panel now collapses by default and shows at-a-glance
+  indicator badges in its header, so an admin can tell whether anything needs
+  attention without opening the full panel. Badges appear only when there is
+  something to show: a count of logged `ERROR` events, a count of `WARN` events,
+  a storage badge when a single connection or the total store passes 90% of its
+  quota, and an update badge when a genuinely newer release exists. Each badge
+  carries a screen-reader label, and when everything is clean the header reads
+  "All clear". The toggle is a real button with the `aria-expanded` /
+  `aria-controls` disclosure contract and keyboard support, and the chevron
+  animation is disabled under `prefers-reduced-motion`. Report a Bug / Refresh /
+  Clear All move into the panel body so the collapsed header stays quiet.
+
+### Fixed
+- The admin "Update available" banner no longer tells you to install an older
+  release. The version check compared release tags for equality only, so a
+  deployed build running ahead of the latest published GitHub release (for
+  example 2.5.0 deployed against a 2.0.5 release tag) was wrongly flagged as out
+  of date. It now compares versions numerically and treats a build that is equal
+  to or ahead of the latest release as up to date. The cached check result (7-day
+  TTL) is also recomputed against the live app version on every read, so the
+  correct state appears immediately after a deploy instead of persisting the stale
+  banner until the cache expires.
+
 ## [2.4.1] - 2026-07-10
 
 ### Fixed
