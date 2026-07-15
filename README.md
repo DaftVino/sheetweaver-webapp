@@ -10,6 +10,33 @@ Users connect a Gmail label to a Google Sheet tab and define extraction rules (f
 
 Multiple team members can each configure their own threads. Each user's trigger runs as themselves, reading their own Gmail and writing to their own permitted Sheets.
 
+## Screenshots
+
+Click any image for the full-size version. See [Themes](#themes) for how the palettes are selected.
+
+<table>
+  <tr>
+    <td align="center" width="33%">
+      <a href="docs/screenshots/light-homepage.png">
+        <img src="docs/screenshots/light-homepage.png" alt="SheetWeaver dashboard in the Solar theme, showing the Active Threads table and the admin diagnostics panel" width="360">
+      </a>
+      <br><sub><b>Solar</b> — dashboard and admin diagnostics</sub>
+    </td>
+    <td align="center" width="33%">
+      <a href="docs/screenshots/dark-parser-ui.png">
+        <img src="docs/screenshots/dark-parser-ui.png" alt="Parser rule editor in the Torres theme, showing the email preview and capture pattern rows" width="360">
+      </a>
+      <br><sub><b>Torres</b> — parser rules, wizard step 2</sub>
+    </td>
+    <td align="center" width="33%">
+      <a href="docs/screenshots/c64-parser-ui.png">
+        <img src="docs/screenshots/c64-parser-ui.png" alt="Parser rule editor in the retro C64 theme, showing capture patterns and live example output" width="360">
+      </a>
+      <br><sub><b>C64</b> — parser rules, wizard step 2</sub>
+    </td>
+  </tr>
+</table>
+
 ## Tech Stack
 
 | Layer | Technology |
